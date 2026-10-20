@@ -1,0 +1,5 @@
+# Install as /etc/wgmanager/authorized_keys, owner root, mode 0644 (NOT in the
+# wgweb home: the account must not be able to edit its own restrictions).
+# Replace the subnet with the container network's subnet (pin it in compose.yaml)
+# and the key with the PUBLIC half of the key generated for this app only.
+command="sudo -n /usr/local/sbin/wgmanager-helper --ssh",restrict,from="172.30.0.0/24" ssh-ed25519 AAAA_REPLACE_WITH_PUBLIC_KEY wgmanager

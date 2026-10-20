@@ -1,0 +1,847 @@
+#!/usr/bin/python3 -I
+"""wgmanager-helper: the root-privileged half of wgmanager.
+
+Specification: docs/HELPER-SPEC.md. Read that first; this file implements it.
+
+Invoked two ways:
+  * from sshd/sudo as `wgmanager-helper --ssh`, reading the request from the
+    SSH_ORIGINAL_COMMAND environment variable (the only way the web app's key
+    can reach it);
+  * directly by an administrator:
+      wgmanager-helper [--config PATH] [--no-owner-checks] [--pretty] ACTION [NAME]
+
+Python standard library only. Everything the caller controls is one short string
+that must match a strict grammar before any other code runs.
+"""
+
+import errno
+import fcntl
+import hashlib
+import ipaddress
+import json
+import os
+import re
+import stat
+import subprocess
+import sys
+import syslog
+import time
+
+HELPER_VERSION = "0.1.1"
+PROTOCOL = 1
+BACKEND = "pivpn"
+
+DEFAULT_CONFIG_PATH = "/etc/wgmanager/config"
+
+MAX_REQUEST_LEN = 64
+MAX_CLIENTS_TXT = 1024 * 1024
+MAX_SERVER_CONF = 1024 * 1024
+MAX_CLIENT_CONF = 8 * 1024
+MAX_SETTINGS_FILE = 8 * 1024
+
+LOCK_TIMEOUT = 10.0      # seconds to wait for the mutation lock
+BACKEND_TIMEOUT = 30     # seconds for one pivpn call
+WG_TIMEOUT = 5           # seconds for `wg show`
+VERIFY_TIMEOUT = 3.0     # seconds to wait for post-change state to settle
+VERIFY_INTERVAL = 0.5
+
+SAFE_ENV = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"}
+
+# --- grammar -----------------------------------------------------------------
+
+REQUEST_RE = re.compile(r"[a-z][a-z-]{0,15}(?: [A-Za-z0-9_][A-Za-z0-9_-]{0,14})?")
+NAME_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]{0,14}")
+DIGITS_ONLY_RE = re.compile(r"[0-9]+")
+# Names as they may appear in PiVPN's own files (looser than names we accept).
+LISTED_NAME_RE = re.compile(r"[A-Za-z0-9._@-]{1,64}")
+PUBKEY_RE = re.compile(r"[A-Za-z0-9+/]{43}=")
+NUMBER_RE = re.compile(r"[0-9]{1,12}")
+IFACE_RE = re.compile(r"[A-Za-z0-9_-]{1,15}")
+BACKUP_FILE_RE = re.compile(
+    r"([0-9]{8}T[0-9]{9}Z-[a-z-]+-[A-Za-z0-9_-]+)\.[A-Za-z0-9_-]+(?:\.conf|\.txt)")
+
+# action -> number of name arguments
+ACTIONS = {
+    "version": 0,
+    "list": 0,
+    "add": 1,
+    "remove": 1,
+    "enable": 1,
+    "disable": 1,
+    "get-config": 1,
+}
+
+ERRORS = {
+    "invalid_request": (2, "invalid request"),
+    "not_found": (3, "client not found"),
+    "exists": (4, "client already exists"),
+    "backend_failed": (5, "change may be incomplete"),
+    "host_misconfigured": (6, "host is misconfigured"),
+    "busy": (7, "another change is in progress"),
+    "internal": (10, "internal error"),
+}
+
+SETTING_DEFAULTS = {
+    "WG_INTERFACE": "wg0",
+    "WG_DIR": "/etc/wireguard",
+    "PIVPN_BIN": "/usr/local/bin/pivpn",
+    "PIVPN_SCRIPTS_DIR": "/opt/pivpn/wireguard",
+    "PIVPN_SETUPVARS": "/etc/pivpn/wireguard/setupVars.conf",
+    "WG_BIN": "/usr/bin/wg",
+    "BACKUP_DIR": "/var/backups/wgmanager",
+    "BACKUP_KEEP": "20",
+    "LOCK_FILE": "/run/wgmanager.lock",
+}
+PATH_SETTINGS = ("WG_DIR", "PIVPN_BIN", "PIVPN_SCRIPTS_DIR", "PIVPN_SETUPVARS",
+                 "WG_BIN", "BACKUP_DIR", "LOCK_FILE")
+DIAGNOSTIC_SCRIPTS = ("makeCONF.sh", "removeCONF.sh", "enableCONF.sh", "disableCONF.sh")
+
+
+class HelperError(Exception):
+    """A failure with a stable code. `extra` is merged into the error object."""
+
+    def __init__(self, code, extra=None):
+        super().__init__(code)
+        self.code = code
+        self.extra = extra or {}
+
+
+class BackendTimeout(Exception):
+    pass
+
+
+# --- logging -----------------------------------------------------------------
+
+_log_opened = False
+
+
+def log(level, message):
+    """Write to the system journal. Never pass secrets or backend output here."""
+    global _log_opened
+    try:
+        if not _log_opened:
+            syslog.openlog("wgmanager-helper", syslog.LOG_PID, syslog.LOG_DAEMON)
+            _log_opened = True
+        syslog.syslog(level, message)
+    except Exception:
+        pass
+
+
+# --- settings ----------------------------------------------------------------
+
+class Settings:
+    def __init__(self, values, enforce_owner):
+        self.interface = values["WG_INTERFACE"]
+        self.wg_dir = values["WG_DIR"]
+        self.pivpn_bin = values["PIVPN_BIN"]
+        self.pivpn_scripts_dir = values["PIVPN_SCRIPTS_DIR"]
+        self.pivpn_setupvars = values["PIVPN_SETUPVARS"]
+        self.wg_bin = values["WG_BIN"]
+        self.backup_dir = values["BACKUP_DIR"]
+        self.backup_keep = int(values["BACKUP_KEEP"])
+        self.lock_file = values["LOCK_FILE"]
+        self.enforce_owner = enforce_owner
+        # Set by preflight: the symlink-resolved paths that are actually executed.
+        self.pivpn_exec = None
+        self.wg_exec = None
+
+    @property
+    def clients_txt(self):
+        return os.path.join(self.wg_dir, "configs", "clients.txt")
+
+    @property
+    def server_conf(self):
+        return os.path.join(self.wg_dir, self.interface + ".conf")
+
+    def client_conf(self, name):
+        # `name` has already passed NAME_RE: no separators, no dots.
+        return os.path.join(self.wg_dir, "configs", name + ".conf")
+
+
+def mode_unsafe(st):
+    """True if group or others can write."""
+    return bool(st.st_mode & 0o022)
+
+
+def read_text(path, cap):
+    """Read a regular file (never following a final symlink), capped, as UTF-8."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    with os.fdopen(fd, "rb") as handle:
+        st = os.fstat(handle.fileno())
+        if not stat.S_ISREG(st.st_mode):
+            raise ValueError("not a regular file")
+        data = handle.read(cap + 1)
+    if len(data) > cap:
+        raise ValueError("file too large")
+    return data.decode("utf-8", "strict")
+
+
+def load_settings(config_path, enforce_owner):
+    values = dict(SETTING_DEFAULTS)
+    try:
+        st = os.lstat(config_path)
+    except FileNotFoundError:
+        st = None
+    except OSError:
+        raise HelperError("host_misconfigured")
+
+    if st is not None:
+        if (not stat.S_ISREG(st.st_mode) or mode_unsafe(st)
+                or (enforce_owner and st.st_uid != 0)):
+            log(syslog.LOG_ERR, "config file has unsafe type, mode or owner")
+            raise HelperError("host_misconfigured")
+        try:
+            text = read_text(config_path, MAX_SETTINGS_FILE)
+        except (OSError, ValueError):
+            raise HelperError("host_misconfigured")
+        for raw in text.split("\n"):
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            key, sep, value = line.partition("=")
+            key, value = key.strip(), value.strip()
+            if not sep or key not in SETTING_DEFAULTS:
+                log(syslog.LOG_ERR, "config file has an unknown or malformed line")
+                raise HelperError("host_misconfigured")
+            values[key] = value
+
+    if not IFACE_RE.fullmatch(values["WG_INTERFACE"]):
+        raise HelperError("host_misconfigured")
+    for key in PATH_SETTINGS:
+        value = values[key]
+        if (not value.startswith("/") or "\0" in value
+                or ".." in value.split("/")):
+            log(syslog.LOG_ERR, "config setting %s is not a clean absolute path" % key)
+            raise HelperError("host_misconfigured")
+    if not re.fullmatch(r"[0-9]{1,3}", values["BACKUP_KEEP"]) \
+            or not 1 <= int(values["BACKUP_KEEP"]) <= 200:
+        raise HelperError("host_misconfigured")
+    return Settings(values, enforce_owner)
+
+
+# --- request parsing ---------------------------------------------------------
+
+def is_safe_name(name):
+    return (bool(NAME_RE.fullmatch(name))
+            and not DIGITS_ONLY_RE.fullmatch(name)
+            and name != "server")
+
+
+def parse_request(request):
+    """Return (action, name_or_None) or raise invalid_request."""
+    if not isinstance(request, str) or len(request) > MAX_REQUEST_LEN:
+        raise HelperError("invalid_request")
+    if not REQUEST_RE.fullmatch(request):
+        raise HelperError("invalid_request")
+    parts = request.split(" ")
+    action, args = parts[0], parts[1:]
+    if action not in ACTIONS or len(args) != ACTIONS[action]:
+        raise HelperError("invalid_request")
+    name = args[0] if args else None
+    if name is not None and not is_safe_name(name):
+        raise HelperError("invalid_request")
+    return action, name
+
+
+# --- subprocess --------------------------------------------------------------
+
+def run(argv, timeout):
+    """Run a fixed argument list. No shell, no stdin, minimal environment."""
+    try:
+        return subprocess.run(
+            argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, env=SAFE_ENV, cwd="/", timeout=timeout,
+            shell=False, check=False)
+    except subprocess.TimeoutExpired:
+        raise BackendTimeout()
+
+
+# --- preflight ---------------------------------------------------------------
+
+# Each check reports a problem as a short kind string, or None when fine:
+#   missing | not_regular | writable | not_root | not_executable | not_running_as_root
+# `wgmanager-host doctor` imports preflight_problems() so that it and the helper
+# can never disagree about what a healthy host looks like.
+
+def _file_problem(path, settings):
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return "missing"
+    if not stat.S_ISREG(st.st_mode):
+        return "not_regular"
+    if mode_unsafe(st):
+        return "writable"
+    if settings.enforce_owner and st.st_uid != 0:
+        return "not_root"
+    return None
+
+
+def _resolve_executable(path, settings):
+    """Resolve symlinks once and vet the real file.
+
+    Returns (real_path, problem). problem is None or (offending_path, kind).
+    The caller executes the *returned* path, so only the target and the
+    directory it lives in need to be trusted. The directory that merely holds a
+    symlink (for example /usr/local/bin) is never relied on: swapping the link
+    can only point at something that must itself pass these checks.
+    """
+    real = os.path.realpath(path)
+    for candidate in (real, os.path.dirname(real)):
+        try:
+            st = os.stat(candidate)
+        except OSError:
+            return real, (candidate, "missing")
+        if mode_unsafe(st):
+            return real, (candidate, "writable")
+        if settings.enforce_owner and st.st_uid != 0:
+            return real, (candidate, "not_root")
+    if not os.access(real, os.X_OK):
+        return real, (real, "not_executable")
+    return real, None
+
+
+def preflight_problems(settings):
+    """Return every host problem as (what, path, kind) tuples; [] means healthy.
+
+    Sets settings.pivpn_exec / settings.wg_exec (the vetted real paths) for each
+    executable that passes. Never raises for the state of the host.
+    """
+    problems = []
+    if settings.enforce_owner and os.geteuid() != 0:
+        problems.append(("helper", "", "not_running_as_root"))
+    for what, path in (("clients.txt", settings.clients_txt),
+                       ("server config", settings.server_conf),
+                       ("PiVPN setupVars", settings.pivpn_setupvars)):
+        kind = _file_problem(path, settings)
+        if kind:
+            problems.append((what, path, kind))
+    for what, path, attr in (("pivpn", settings.pivpn_bin, "pivpn_exec"),
+                             ("wg", settings.wg_bin, "wg_exec")):
+        real, problem = _resolve_executable(path, settings)
+        if problem:
+            problems.append((what,) + problem)
+        else:
+            setattr(settings, attr, real)
+    return problems
+
+
+def preflight(settings):
+    problems = preflight_problems(settings)
+    for what, path, kind in problems:
+        log(syslog.LOG_ERR, "preflight: %s (%s): %s" % (what, path or "-", kind))
+    if problems:
+        raise HelperError("host_misconfigured")
+
+
+# --- reading state -----------------------------------------------------------
+
+def parse_clients(text):
+    """Parse clients.txt: `name public_key created_epoch address_decimal`."""
+    clients, warnings, seen = [], [], set()
+    for number, line in enumerate(text.split("\n"), 1):
+        if line.strip() == "":
+            continue
+        parts = line.split(" ")
+        valid = (len(parts) == 4
+                 and LISTED_NAME_RE.fullmatch(parts[0])
+                 and PUBKEY_RE.fullmatch(parts[1])
+                 and NUMBER_RE.fullmatch(parts[2])
+                 and NUMBER_RE.fullmatch(parts[3]))
+        address = None
+        if valid:
+            try:
+                address = str(ipaddress.IPv4Address(int(parts[3])))
+            except ValueError:
+                valid = False
+        if not valid:
+            warnings.append("clients.txt line %d: malformed entry skipped" % number)
+            continue
+        if parts[0] in seen:
+            warnings.append("clients.txt line %d: duplicate name skipped" % number)
+            continue
+        seen.add(parts[0])
+        clients.append({
+            "name": parts[0],
+            "public_key": parts[1],
+            "created_at": int(parts[2]),
+            "address": address,
+            "manageable": is_safe_name(parts[0]),
+        })
+    return clients, warnings
+
+
+def scan_markers(text):
+    """Map client name -> True (enabled) / False (disabled), by exact line match."""
+    enabled_prefix = "### begin "
+    disabled_prefix = "#[disabled] ### begin "
+    suffix = " ###"
+    states = {}
+    for line in text.split("\n"):
+        line = line.rstrip("\r")
+        if not line.endswith(suffix):
+            continue
+        if line.startswith(enabled_prefix):
+            states[line[len(enabled_prefix):-len(suffix)]] = True
+        elif line.startswith(disabled_prefix):
+            states[line[len(disabled_prefix):-len(suffix)]] = False
+    return states
+
+
+def read_live(settings):
+    """Live interface state from `wg show IFACE dump`, or None if unavailable.
+
+    The dump contains the interface private key and every preshared key. Only
+    public information is copied out of it; the rest is discarded here.
+    """
+    try:
+        proc = run([settings.wg_exec or settings.wg_bin, "show", settings.interface, "dump"],
+                   WG_TIMEOUT)
+    except (BackendTimeout, OSError):
+        return None
+    if proc.returncode != 0:
+        return None
+    lines = [ln for ln in proc.stdout.decode("utf-8", "replace").split("\n") if ln]
+    if not lines:
+        return None
+    head = lines[0].split("\t")
+    if len(head) < 4 or not PUBKEY_RE.fullmatch(head[1]):
+        return None
+    result = {
+        "public_key": head[1],
+        "listen_port": int(head[2]) if NUMBER_RE.fullmatch(head[2]) else None,
+        "peers": {},
+    }
+    for line in lines[1:]:
+        cols = line.split("\t")
+        if len(cols) < 8 or not PUBKEY_RE.fullmatch(cols[0]):
+            continue
+        if not (NUMBER_RE.fullmatch(cols[4]) and NUMBER_RE.fullmatch(cols[5])
+                and NUMBER_RE.fullmatch(cols[6])):
+            continue
+        handshake = int(cols[4])
+        result["peers"][cols[0]] = {
+            "endpoint": None if cols[2] == "(none)" else cols[2][:128],
+            "latest_handshake": handshake if handshake else None,
+            "transfer_rx": int(cols[5]),
+            "transfer_tx": int(cols[6]),
+        }
+    return result
+
+
+def snapshot(settings):
+    try:
+        clients_text = read_text(settings.clients_txt, MAX_CLIENTS_TXT)
+        conf_text = read_text(settings.server_conf, MAX_SERVER_CONF)
+    except (OSError, ValueError):
+        raise HelperError("host_misconfigured")
+    clients, warnings = parse_clients(clients_text)
+    return {
+        "clients": clients,
+        "by_name": {c["name"]: c for c in clients},
+        "warnings": warnings,
+        "markers": scan_markers(conf_text),
+        "live": read_live(settings),
+    }
+
+
+def is_live(snap, client):
+    return snap["live"] is not None and client["public_key"] in snap["live"]["peers"]
+
+
+def client_entry(snap, client):
+    live_peer = None
+    if snap["live"] is not None:
+        live_peer = snap["live"]["peers"].get(client["public_key"])
+    return {
+        "name": client["name"],
+        "public_key": client["public_key"],
+        "address": client["address"],
+        "created_at": client["created_at"],
+        "enabled": snap["markers"].get(client["name"]),
+        "live": live_peer is not None,
+        "manageable": client["manageable"],
+        "endpoint": live_peer["endpoint"] if live_peer else None,
+        "latest_handshake": live_peer["latest_handshake"] if live_peer else None,
+        "transfer_rx": live_peer["transfer_rx"] if live_peer else None,
+        "transfer_tx": live_peer["transfer_tx"] if live_peer else None,
+    }
+
+
+def conf_file_exists(settings, name):
+    try:
+        st = os.lstat(settings.client_conf(name))
+    except OSError:
+        return False
+    return stat.S_ISREG(st.st_mode)
+
+
+def read_client_conf(settings, name):
+    try:
+        return read_text(settings.client_conf(name), MAX_CLIENT_CONF)
+    except (OSError, ValueError):
+        return None
+
+
+def find_client(snap, name):
+    client = snap["by_name"].get(name)
+    if client is None:
+        raise HelperError("not_found")
+    return client
+
+
+# --- read-only actions -------------------------------------------------------
+
+def sha256_of(path):
+    try:
+        digest = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(65536), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return None
+
+
+def action_version(settings):
+    return {
+        "helper_version": HELPER_VERSION,
+        "protocol": PROTOCOL,
+        "backend": BACKEND,
+        "interface": settings.interface,
+        # Informational only: lets the admin compare against the tested-with list.
+        "pivpn_scripts": {
+            name: sha256_of(os.path.join(settings.pivpn_scripts_dir, name))
+            for name in DIAGNOSTIC_SCRIPTS
+        },
+    }
+
+
+def action_list(settings):
+    snap = snapshot(settings)
+    warnings = list(snap["warnings"])
+    for client in snap["clients"]:
+        if snap["markers"].get(client["name"]) is None:
+            warnings.append("%s: no marker block in server config" % client["name"])
+    live = snap["live"]
+    return {
+        "interface": {
+            "name": settings.interface,
+            "up": live is not None,
+            "public_key": live["public_key"] if live else None,
+            "listen_port": live["listen_port"] if live else None,
+        },
+        "clients": [client_entry(snap, c) for c in snap["clients"]],
+        "warnings": warnings,
+    }
+
+
+def action_get_config(settings, name):
+    snap = snapshot(settings)
+    find_client(snap, name)
+    text = read_client_conf(settings, name)
+    if text is None:
+        raise HelperError("backend_failed", {
+            "partial": False, "failed_checks": ["client_config_file"],
+            "backend_exit_code": None, "backup": None})
+    return {"name": name, "config": text}
+
+
+# --- mutations ---------------------------------------------------------------
+
+def acquire_lock(path):
+    fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
+    deadline = time.monotonic() + LOCK_TIMEOUT
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fd
+        except OSError as exc:
+            if exc.errno not in (errno.EAGAIN, errno.EACCES):
+                os.close(fd)
+                raise
+        if time.monotonic() >= deadline:
+            os.close(fd)
+            raise HelperError("busy")
+        time.sleep(0.1)
+
+
+def make_backup(settings, action, name):
+    """Copy the server config and clients.txt to the backup dir. Fail closed."""
+    try:
+        os.makedirs(settings.backup_dir, mode=0o700, exist_ok=True)
+        st = os.stat(settings.backup_dir)
+        if (st.st_mode & 0o077) or (settings.enforce_owner and st.st_uid != 0):
+            log(syslog.LOG_ERR, "backup directory is not private")
+            raise HelperError("host_misconfigured")
+        now = time.time()
+        stamp = "%s%03dZ" % (time.strftime("%Y%m%dT%H%M%S", time.gmtime(now)),
+                             int((now % 1) * 1000))
+        base = "%s-%s-%s" % (stamp, action, name)
+        sources = (
+            (settings.server_conf, os.path.basename(settings.server_conf), MAX_SERVER_CONF),
+            (settings.clients_txt, "clients.txt", MAX_CLIENTS_TXT),
+        )
+        for src, suffix, cap in sources:
+            data = read_text(src, cap).encode("utf-8")
+            dst = os.path.join(settings.backup_dir, base + "." + suffix)
+            fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+                         | os.O_CLOEXEC, 0o600)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+        prune_backups(settings)
+        return base
+    except HelperError:
+        raise
+    except (OSError, ValueError):
+        log(syslog.LOG_ERR, "could not write pre-change backup; change aborted")
+        raise HelperError("host_misconfigured")
+
+
+def prune_backups(settings):
+    groups = {}
+    for entry in os.listdir(settings.backup_dir):
+        match = BACKUP_FILE_RE.fullmatch(entry)
+        if match:
+            groups.setdefault(match.group(1), []).append(entry)
+    for base in sorted(groups, reverse=True)[settings.backup_keep:]:
+        for entry in groups[base]:
+            try:
+                os.unlink(os.path.join(settings.backup_dir, entry))
+            except OSError:
+                pass
+
+
+def verify(settings, check):
+    """Re-read state until `check(snapshot)` returns no failures or time runs out."""
+    deadline = time.monotonic() + VERIFY_TIMEOUT
+    while True:
+        try:
+            failed = check(snapshot(settings))
+        except HelperError:
+            failed = ["client_record", "client_config_file",
+                      "server_config_block", "live_peer"]
+        if not failed or time.monotonic() >= deadline:
+            return failed
+        time.sleep(VERIFY_INTERVAL)
+
+
+def backend_failure(failed, partial, exit_code, backup):
+    return HelperError("backend_failed", {
+        "partial": partial, "failed_checks": failed,
+        "backend_exit_code": exit_code, "backup": backup})
+
+
+def run_backend(settings, action, name, argv, check):
+    """Back up, run the backend, verify. Raises backend_failed on any doubt."""
+    backup = make_backup(settings, action, name)
+    exit_code, timed_out = None, False
+    try:
+        proc = run(argv, BACKEND_TIMEOUT)
+        exit_code = proc.returncode
+    except BackendTimeout:
+        timed_out = True
+    except OSError:
+        raise backend_failure(["backend_not_run"], False, None, backup)
+    failed = verify(settings, check)
+    if timed_out:
+        failed = ["backend_timeout"] + failed
+    if failed:
+        raise backend_failure(failed, True, exit_code, backup)
+    if exit_code not in (0, None):
+        log(syslog.LOG_WARNING, "action=%s client=%s backend exit code %s but "
+            "state verified" % (action, name, exit_code))
+
+
+def action_add(settings, name):
+    snap = snapshot(settings)
+    lowered = name.lower()
+    if any(c["name"].lower() == lowered for c in snap["clients"]) \
+            or os.path.lexists(settings.client_conf(name)):
+        raise HelperError("exists")
+
+    def check(s):
+        failed = []
+        client = s["by_name"].get(name)
+        if client is None:
+            failed.append("client_record")
+        if not conf_file_exists(settings, name):
+            failed.append("client_config_file")
+        if s["markers"].get(name) is not True:
+            failed.append("server_config_block")
+        if client is None or not is_live(s, client):
+            failed.append("live_peer")
+        return failed
+
+    # No -ip: older PiVPN scripts lack it; newer ones auto-allocate on empty stdin.
+    run_backend(settings, "add", name, [settings.pivpn_exec, "add", "-n", name], check)
+    final = snapshot(settings)
+    config = read_client_conf(settings, name)
+    if config is None:
+        raise backend_failure(["client_config_file"], True, None, None)
+    return {"client": client_entry(final, final["by_name"][name]), "config": config}
+
+
+def action_remove(settings, name):
+    snap = snapshot(settings)
+    client = find_client(snap, name)
+    public_key = client["public_key"]
+
+    def check(s):
+        failed = []
+        if name in s["by_name"]:
+            failed.append("client_record")
+        if conf_file_exists(settings, name):
+            failed.append("client_config_file")
+        if name in s["markers"]:
+            failed.append("server_config_block")
+        if s["live"] is not None and public_key in s["live"]["peers"]:
+            failed.append("live_peer")
+        return failed
+
+    run_backend(settings, "remove", name,
+                [settings.pivpn_exec, "remove", "--yes", name], check)
+    return {"name": name, "removed": True}
+
+
+def action_toggle(settings, action, name):
+    want_enabled = (action == "enable")
+    snap = snapshot(settings)
+    client = find_client(snap, name)
+    marker = snap["markers"].get(name)
+    if marker is None:
+        # Nothing for PiVPN to flip; do not touch anything.
+        raise backend_failure(["server_config_block"], False, None, None)
+
+    def check(s):
+        failed = []
+        c = s["by_name"].get(name)
+        if s["markers"].get(name) is not want_enabled:
+            failed.append("server_config_block")
+        if c is None:
+            failed.append("client_record")
+        elif is_live(s, c) != want_enabled:
+            failed.append("live_peer")
+        return failed
+
+    # Skip the backend when there is nothing for it to do. `pivpn on` always
+    # reloads, so an enabled-but-not-live client is still worth one call; `pivpn
+    # off` on an already-disabled client does nothing, so it is never called.
+    if want_enabled:
+        needs_backend = (marker is not True) or not is_live(snap, client)
+    else:
+        needs_backend = (marker is True)
+
+    if not needs_backend:
+        failed = check(snap)
+        if failed:
+            raise backend_failure(failed, False, None, None)
+        return {"client": client_entry(snap, client), "changed": False}
+
+    verb = "on" if want_enabled else "off"
+    run_backend(settings, action, name, [settings.pivpn_exec, verb, "--yes", name], check)
+    final = snapshot(settings)
+    return {"client": client_entry(final, final["by_name"][name]), "changed": True}
+
+
+def mutate(settings, action, name):
+    lock_fd = acquire_lock(settings.lock_file)
+    try:
+        if action == "add":
+            return action_add(settings, name)
+        if action == "remove":
+            return action_remove(settings, name)
+        return action_toggle(settings, action, name)
+    finally:
+        os.close(lock_fd)
+
+
+# --- dispatch ----------------------------------------------------------------
+
+def execute(settings, action, name):
+    if action == "version":
+        return action_version(settings)
+    preflight(settings)
+    if action == "list":
+        return action_list(settings)
+    if action == "get-config":
+        return action_get_config(settings, name)
+    return mutate(settings, action, name)
+
+
+def error_response(err):
+    exit_code, message = ERRORS[err.code]
+    body = {"code": err.code, "message": message}
+    body.update(err.extra)
+    return exit_code, {"ok": False, "protocol": PROTOCOL, "error": body}
+
+
+def handle(settings_loader, request):
+    """Run one request. Returns (exit_code, response_object). Never raises."""
+    action, name = None, None
+    try:
+        action, name = parse_request(request)
+        settings = settings_loader()
+        data = execute(settings, action, name)
+        if action in ("add", "remove", "enable", "disable"):
+            log(syslog.LOG_INFO, "action=%s client=%s result=ok" % (action, name))
+        return 0, {"ok": True, "protocol": PROTOCOL, "data": data}
+    except HelperError as err:
+        if action in ("add", "remove", "enable", "disable", "get-config"):
+            log(syslog.LOG_WARNING, "action=%s%s result=error:%s" % (
+                action, (" client=%s" % name) if name else "", err.code))
+        return error_response(err)
+    except Exception as exc:  # unexpected: type and line only, never values
+        tb = exc.__traceback__
+        while tb is not None and tb.tb_next is not None:
+            tb = tb.tb_next
+        log(syslog.LOG_ERR, "internal error %s at line %s" % (
+            type(exc).__name__, tb.tb_lineno if tb else "?"))
+        return error_response(HelperError("internal"))
+
+
+def emit(out, response, pretty):
+    if pretty:
+        out.write(json.dumps(response, indent=2, ensure_ascii=True) + "\n")
+    else:
+        out.write(json.dumps(response, separators=(",", ":"), ensure_ascii=True) + "\n")
+    out.flush()
+
+
+def main(argv, environ=None, out=None):
+    os.umask(0o077)
+    environ = os.environ if environ is None else environ
+    out = sys.stdout if out is None else out
+
+    if argv == ["--ssh"]:
+        request = environ.get("SSH_ORIGINAL_COMMAND", "")
+        code, response = handle(
+            lambda: load_settings(DEFAULT_CONFIG_PATH, True), request)
+        emit(out, response, False)
+        return code
+
+    # Administrator / test mode.
+    config_path, enforce_owner, pretty = DEFAULT_CONFIG_PATH, True, False
+    args = list(argv)
+    while args and args[0].startswith("--"):
+        flag = args.pop(0)
+        if flag == "--config" and args:
+            config_path = args.pop(0)
+        elif flag == "--no-owner-checks":
+            enforce_owner = False
+        elif flag == "--pretty":
+            pretty = True
+        else:
+            sys.stderr.write("usage: wgmanager-helper [--config PATH] "
+                             "[--no-owner-checks] [--pretty] ACTION [NAME]\n")
+            return 2
+    code, response = handle(
+        lambda: load_settings(config_path, enforce_owner), " ".join(args))
+    emit(out, response, pretty)
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

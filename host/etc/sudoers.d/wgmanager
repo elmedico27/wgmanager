@@ -1,0 +1,8 @@
+# Install as /etc/sudoers.d/wgmanager, owner root, mode 0440.
+# Validate BEFORE installing:  visudo -cf host/etc/sudoers.d/wgmanager
+# A broken sudoers file can lock an administrator out.
+#
+# One rule, exact arguments, no wildcards. SSH_ORIGINAL_COMMAND is the only
+# environment variable allowed through, and only for this one command.
+Defaults!/usr/local/sbin/wgmanager-helper env_keep += "SSH_ORIGINAL_COMMAND"
+wgweb ALL=(root) NOPASSWD: /usr/local/sbin/wgmanager-helper --ssh

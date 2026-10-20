@@ -1,0 +1,17 @@
+# Normalise line endings in the repository to LF.
+# Host-side scripts run on Linux; a CRLF shebang line ("python3\r") breaks them.
+* text=auto eol=lf
+
+# Be explicit for files that must never be CRLF
+*.sh   text eol=lf
+*.py   text eol=lf
+*.js   text eol=lf
+*.json text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.conf text eol=lf
+Dockerfile text eol=lf
+
+# Binary
+*.png    binary
+*.sketch binary
