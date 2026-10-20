@@ -13,3 +13,7 @@ Standard library only; no root, WireGuard, PiVPN, sshd or sudo needed.
   Every external command (`sshd`, `sudo`, `visudo`, `id`, `getent`) is answered
   from a table, so each way a real server can be misconfigured is reproducible.
   It also asserts that `doctor` changes nothing.
+- `test_install.py` tests `install` and `uninstall` against a stateful fake system
+  (accounts, files, sshd, sudo). It checks what ends up on disk, that sshd is changed
+  last, that a failure at any step restores the previous state, and that running
+  twice changes nothing.
