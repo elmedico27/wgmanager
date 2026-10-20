@@ -1,0 +1,734 @@
+#!/usr/bin/python3 -I
+"""wgmanager-host: check (and, in later versions, install and remove) the host
+side of wgmanager.
+
+    sudo python3 host/wgmanager-host doctor
+
+`doctor` is read-only. It changes nothing: it inspects the PiVPN/WireGuard data,
+the installed helper, the `wgweb` service account, the sudo rule, the sshd
+drop-in and the authorized key, then makes one real call through the same
+sudo hop the web app uses. Every problem is reported with the exact path and the
+command that fixes it. Exit status is 0 when nothing failed (warnings allowed)
+and 1 when something failed.
+
+Python standard library only. The host rules (what counts as a healthy PiVPN
+install) come from the helper itself, so the two can never disagree.
+"""
+
+import argparse
+import fnmatch
+import hashlib
+import importlib.machinery
+import importlib.util
+import json
+import os
+import pwd
+import grp
+import re
+import shlex
+import stat
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+
+ACCOUNT = "wgweb"
+HELPER_PATH = "/usr/local/sbin/wgmanager-helper"
+HELPER_DIR = "/usr/local/sbin"
+SUDOERS_PATH = "/etc/sudoers.d/wgmanager"
+SSHD_DROPIN_PATH = "/etc/ssh/sshd_config.d/wgmanager.conf"
+CONFIG_DIR = "/etc/wgmanager"
+AUTHORIZED_KEYS_PATH = "/etc/wgmanager/authorized_keys"
+
+FORCED_COMMAND = "sudo -n /usr/local/sbin/wgmanager-helper --ssh"
+SUDO_RULE = "(root) NOPASSWD: /usr/local/sbin/wgmanager-helper --ssh"
+
+# Groups that would give the service account power it must not have.
+PRIVILEGED_GROUPS = {"sudo", "wheel", "admin", "root", "docker", "lxd", "adm",
+                     "disk", "shadow", "staff"}
+
+# What sshd must report for the service account. sshd takes the FIRST value it
+# finds for a keyword, so an earlier file can silently override our drop-in.
+SSHD_EXPECT = (
+    ("forcecommand", FORCED_COMMAND),
+    ("authorizedkeysfile", AUTHORIZED_KEYS_PATH),
+    ("pubkeyauthentication", "yes"),
+    ("passwordauthentication", "no"),
+    ("kbdinteractiveauthentication", "no"),
+    ("authenticationmethods", "publickey"),
+    ("permittty", "no"),
+    ("x11forwarding", "no"),
+    ("allowagentforwarding", "no"),
+    ("allowtcpforwarding", "no"),
+    ("permittunnel", "no"),
+)
+SSHD_KEY_NAMES = {"allowusers": "AllowUsers", "allowgroups": "AllowGroups"}
+BOOLEAN_WORDS = {"true": "yes", "false": "no"}     # sshd -T prints some booleans this way
+SSHD_ALIASES = {"kbdinteractiveauthentication": ("challengeresponseauthentication",)}
+
+SSHD_PROBE = "user=%s,host=localhost,addr=127.0.0.1" % ACCOUNT
+
+KEY_TYPES_RE = re.compile(r"(ssh-|ecdsa-|sk-)")
+KEYLINE_RE = re.compile(
+    r'^(?P<opts>(?:[^\s"]|"(?:[^"\\]|\\.)*")+)\s+(?P<type>\S+)\s+(?P<blob>\S+)'
+    r'(?:\s+(?P<comment>.*))?$')
+
+
+# --- running things ----------------------------------------------------------
+
+def system_run(argv, timeout=15):
+    """Run a fixed argument list; return (exit_code, stdout, stderr)."""
+    env = {"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+           "LC_ALL": "C"}
+    try:
+        done = subprocess.run(
+            argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, env=env, timeout=timeout, shell=False,
+            check=False, universal_newlines=True, errors="replace")
+        return done.returncode, done.stdout, done.stderr
+    except FileNotFoundError:
+        return 127, "", "%s: command not found" % argv[0]
+    except subprocess.TimeoutExpired:
+        return 124, "", "%s: timed out" % argv[0]
+
+
+class Host:
+    """Everything doctor needs from the outside world, so tests can replace it."""
+
+    def __init__(self, here=HERE, root="/", expected_uid=0, runner=system_run,
+                 getpwnam=pwd.getpwnam, euid=None, settings_loader=None):
+        self.here = here
+        self.root = root
+        self.expected_uid = expected_uid
+        self.run = runner
+        self.getpwnam = getpwnam
+        self.euid = os.geteuid() if euid is None else euid
+        self.settings_loader = settings_loader
+        self._sshd = None
+
+    def p(self, path):
+        """Map an absolute host path into the (possibly test) root."""
+        if self.root == "/":
+            return path
+        return os.path.join(self.root, path.lstrip("/"))
+
+    def template(self, *parts):
+        return os.path.join(self.here, "etc", *parts)
+
+    def sshd_effective(self):
+        """(exit_code, parsed `sshd -T` for the service account, stderr). Cached."""
+        if self._sshd is None:
+            code, out, err = self.run(["sshd", "-T", "-C", SSHD_PROBE])
+            self._sshd = (code, parse_sshd_t(out) if code == 0 else {}, err)
+        return self._sshd
+
+
+# --- the report --------------------------------------------------------------
+
+class Report:
+    def __init__(self):
+        self.items = []          # (section, level, text, fix_lines)
+        self.section_name = ""
+
+    def section(self, name):
+        self.section_name = name
+
+    def add(self, level, text, fix=None):
+        fixes = [fix] if isinstance(fix, str) else list(fix or [])
+        self.items.append((self.section_name, level, text, fixes))
+
+    def ok(self, text):
+        self.add("ok", text)
+
+    def info(self, text):
+        self.add("info", text)
+
+    def warn(self, text, fix=None):
+        self.add("warn", text, fix)
+
+    def fail(self, text, fix=None):
+        self.add("fail", text, fix)
+
+    def count(self, level):
+        return sum(1 for item in self.items if item[1] == level)
+
+    @property
+    def failed(self):
+        return self.count("fail") > 0
+
+
+LEVEL_LABEL = {"ok": "ok  ", "info": "info", "warn": "WARN", "fail": "FAIL"}
+LEVEL_COLOR = {"ok": "32", "info": "36", "warn": "33", "fail": "31"}
+
+
+def render(report, out, color=False):
+    def paint(level, text):
+        return "\033[%sm%s\033[0m" % (LEVEL_COLOR[level], text) if color else text
+
+    current = None
+    for section, level, text, fixes in report.items:
+        if section != current:
+            out.write("\n%s\n" % section)
+            current = section
+        out.write("  [%s] %s\n" % (paint(level, LEVEL_LABEL[level]), text))
+        for line in fixes:
+            out.write("         fix: %s\n" % line)
+    fails, warns = report.count("fail"), report.count("warn")
+    out.write("\n")
+    if fails:
+        out.write("%d problem(s) need fixing, %d warning(s).\n" % (fails, warns))
+    elif warns:
+        out.write("No failures, %d warning(s).\n" % warns)
+    else:
+        out.write("Everything checked out.\n")
+
+
+# --- small helpers -----------------------------------------------------------
+
+def describe_owner(st):
+    try:
+        user = pwd.getpwuid(st.st_uid).pw_name
+    except KeyError:
+        user = str(st.st_uid)
+    try:
+        group = grp.getgrgid(st.st_gid).gr_name
+    except KeyError:
+        group = str(st.st_gid)
+    return "owned by %s:%s, mode %04o" % (user, group, stat.S_IMODE(st.st_mode))
+
+
+def sha256_file(path):
+    try:
+        digest = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(65536), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return None
+
+
+def read_bytes(path):
+    try:
+        with open(path, "rb") as handle:
+            return handle.read()
+    except OSError:
+        return None
+
+
+def parse_sshd_t(text):
+    parsed = {}
+    for line in text.splitlines():
+        key, _, value = line.partition(" ")
+        if key:
+            parsed.setdefault(key.lower(), []).append(value.strip())
+    return parsed
+
+
+def ssh_pattern_matches(patterns, value):
+    """OpenSSH-style list: some positive pattern matches and no '!' pattern does.
+
+    `user@host` entries are judged on the user part only, which errs on the side
+    of reporting a match.
+    """
+    positive = False
+    for pattern in patterns:
+        negated = pattern.startswith("!")
+        pattern = pattern.lstrip("!").split("@", 1)[0]
+        if fnmatch.fnmatchcase(value, pattern):
+            if negated:
+                return False
+            positive = True
+    return positive
+
+
+def split_options(opts):
+    """Split an authorized_keys option string on commas outside quotes."""
+    parts, current, quoted, escaped = [], "", False, False
+    for ch in opts:
+        if escaped:
+            current += ch
+            escaped = False
+        elif ch == "\\" and quoted:
+            current += ch
+            escaped = True
+        elif ch == '"':
+            current += ch
+            quoted = not quoted
+        elif ch == "," and not quoted:
+            parts.append(current)
+            current = ""
+        else:
+            current += ch
+    parts.append(current)
+    result = {}
+    for part in parts:
+        name, sep, value = part.partition("=")
+        if sep and value.startswith('"') and value.endswith('"') and len(value) >= 2:
+            value = value[1:-1].replace('\\"', '"')
+        result[name.lower()] = value if sep else True
+    return result
+
+
+def secure_path(ctx, rep, path, label, want_dir=False, create_hint=None):
+    """Report on a path that must be a real file/dir, root-owned, not writable by
+    others. Returns the lstat result when the path exists, else None."""
+    real = ctx.p(path)
+    try:
+        st = os.lstat(real)
+    except OSError:
+        rep.fail("%s is missing (%s)" % (label, path), create_hint)
+        return None
+    kind = stat.S_ISDIR if want_dir else stat.S_ISREG
+    problems, fixes = [], []
+    if not kind(st.st_mode):
+        problems.append("is not a regular %s (a symlink?)" % ("directory" if want_dir else "file"))
+        fixes.append("replace %s with a real %s" % (shlex.quote(path), "directory" if want_dir else "file"))
+    else:
+        if st.st_uid != ctx.expected_uid:
+            problems.append("is not owned by root")
+            fixes.append("sudo chown root:root %s" % shlex.quote(path))
+        if st.st_mode & 0o022:
+            problems.append("is writable by group or others")
+            fixes.append("sudo chmod go-w %s" % shlex.quote(path))
+    if problems:
+        rep.fail("%s %s (%s; %s)" % (label, " and ".join(problems), path, describe_owner(st)), fixes)
+    return st
+
+
+# --- loading the helper (for the shared host rules) ---------------------------
+
+def load_helper(ctx):
+    sys.dont_write_bytecode = True       # never leave root-owned .pyc files in a checkout
+    path = os.path.join(ctx.here, "wgmanager-helper")
+    loader = importlib.machinery.SourceFileLoader("wgmanager_helper", path)
+    spec = importlib.util.spec_from_loader("wgmanager_helper", loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    module.log = lambda *args, **kwargs: None      # doctor must not write to the journal
+    return module
+
+
+PROBLEM_TEXT = {
+    "missing": "is missing",
+    "not_regular": "is not a regular file (a symlink or directory?)",
+    "writable": "is writable by group or others",
+    "not_root": "is not owned by root",
+    "not_executable": "is not executable",
+}
+
+
+def problem_fix(path, kind):
+    quoted = shlex.quote(path)
+    if kind == "writable":
+        return "sudo chmod go-w %s" % quoted
+    if kind == "not_root":
+        return "sudo chown root:root %s" % quoted
+    if kind == "not_executable":
+        return "sudo chmod +x %s" % quoted
+    if kind == "missing":
+        return ("is PiVPN with WireGuard installed? If it lives elsewhere, set the path "
+                "in %s (see config.example)" % os.path.join(CONFIG_DIR, "config"))
+    return "put a regular file at %s" % quoted
+
+
+# --- the checks --------------------------------------------------------------
+
+def check_privileges(ctx, rep):
+    rep.section("This tool")
+    if ctx.euid != 0:
+        rep.fail("doctor must run as root so it can see every file it checks",
+                 "sudo python3 %s doctor" % shlex.quote(os.path.join(ctx.here, "wgmanager-host")))
+        return False
+    rep.ok("running as root")
+    return True
+
+
+def check_platform(ctx, rep):
+    text = (read_bytes(ctx.p("/etc/os-release")) or b"").decode("utf-8", "replace")
+    fields = dict(
+        (k, v.strip('"')) for k, _, v in
+        (line.partition("=") for line in text.splitlines()) if k)
+    family = ("%s %s" % (fields.get("ID", ""), fields.get("ID_LIKE", ""))).split()
+    name = fields.get("PRETTY_NAME", "unknown OS")
+    if {"debian", "ubuntu", "raspbian"} & set(family):
+        rep.ok("%s (Debian family, like PiVPN itself)" % name)
+    else:
+        rep.warn("%s is not a Debian-family system; wgmanager is only tested with PiVPN "
+                 "on Debian-based systems" % name)
+
+
+def check_pivpn(ctx, rep, h):
+    rep.section("PiVPN and WireGuard")
+    try:
+        settings = ctx.settings_loader(h) if ctx.settings_loader else \
+            h.load_settings(ctx.p(h.DEFAULT_CONFIG_PATH), True)
+    except h.HelperError:
+        rep.fail("%s is not a valid settings file (unknown key, relative path, or "
+                 "writable by others)" % os.path.join(CONFIG_DIR, "config"),
+                 ["compare it with host/etc/wgmanager/config.example",
+                  "or remove it to use the defaults"])
+        return None
+    problems = h.preflight_problems(settings)
+    for what, path, kind in problems:
+        if kind == "not_running_as_root":
+            continue
+        line = "%s %s (%s" % (what, PROBLEM_TEXT.get(kind, kind), path)
+        try:
+            st = os.stat(path)
+            line += "; " + describe_owner(st)
+        except OSError:
+            pass
+        rep.fail(line + ")", problem_fix(path, kind))
+    if not problems:
+        rep.ok("pivpn (%s) and wg (%s) found; data files are root-owned and not "
+               "writable by others" % (settings.pivpn_exec, settings.wg_exec))
+
+    backup_dir = settings.backup_dir
+    try:
+        st = os.lstat(backup_dir)
+    except OSError:
+        rep.info("backup directory %s does not exist yet (created on the first change)" % backup_dir)
+    else:
+        if not stat.S_ISDIR(st.st_mode) or st.st_uid != ctx.expected_uid or st.st_mode & 0o077:
+            rep.warn("backup directory should be a root-owned directory with mode 0700 "
+                     "(%s; %s)" % (backup_dir, describe_owner(st)),
+                     ["sudo chown root:root %s && sudo chmod 700 %s"
+                      % (shlex.quote(backup_dir), shlex.quote(backup_dir))])
+        else:
+            rep.ok("backup directory %s is private" % backup_dir)
+    return settings
+
+
+def check_helper_file(ctx, rep, h):
+    rep.section("Installed helper")
+    secure_path(ctx, rep, HELPER_DIR, "helper directory", want_dir=True)
+    install_hint = "sudo python3 %s install" % shlex.quote(os.path.join(ctx.here, "wgmanager-host"))
+    st = secure_path(ctx, rep, HELPER_PATH, "helper", create_hint=install_hint)
+    if st is None:
+        return
+    if not os.access(ctx.p(HELPER_PATH), os.X_OK):
+        rep.fail("helper is not executable (%s)" % HELPER_PATH, "sudo chmod 755 %s" % HELPER_PATH)
+    mine = sha256_file(os.path.join(ctx.here, "wgmanager-helper"))
+    installed = sha256_file(ctx.p(HELPER_PATH))
+    if mine and installed == mine:
+        rep.ok("helper %s matches this checkout (version %s)" % (HELPER_PATH, h.HELPER_VERSION))
+    else:
+        rep.warn("the installed helper differs from this checkout (checkout is version %s)"
+                 % h.HELPER_VERSION, install_hint)
+
+
+def check_account(ctx, rep):
+    rep.section("Service account")
+    try:
+        pw = ctx.getpwnam(ACCOUNT)
+    except KeyError:
+        rep.fail("user %s does not exist" % ACCOUNT,
+                 "sudo python3 %s install" % shlex.quote(os.path.join(ctx.here, "wgmanager-host")))
+        return
+    if pw.pw_uid >= 1000:
+        rep.warn("%s has uid %d: it looks like a regular user, not a system account" % (ACCOUNT, pw.pw_uid))
+    else:
+        rep.ok("%s is a system account (uid %d)" % (ACCOUNT, pw.pw_uid))
+    shell = os.path.basename(pw.pw_shell or "")
+    if shell in ("nologin", "false", ""):
+        rep.fail("%s has shell %s, so sshd cannot run the forced command" % (ACCOUNT, pw.pw_shell or "(none)"),
+                 "sudo usermod --shell /bin/sh %s" % ACCOUNT)
+
+    code, out, _ = ctx.run(["id", "-nG", ACCOUNT])
+    groups = out.split() if code == 0 else []
+    bad = sorted(set(groups) & PRIVILEGED_GROUPS)
+    if bad:
+        rep.fail("%s is in privileged group(s): %s" % (ACCOUNT, ", ".join(bad)),
+                 ["sudo gpasswd -d %s %s" % (ACCOUNT, g) for g in bad])
+    elif code == 0:
+        rep.ok("%s is in no privileged groups (%s)" % (ACCOUNT, ", ".join(groups) or "none"))
+
+    code, out, _ = ctx.run(["getent", "shadow", ACCOUNT])
+    if code == 0:
+        field = out.strip().split(":")[1] if ":" in out else ""
+        usepam = (ctx.sshd_effective()[1].get("usepam") or ["unknown"])[0]
+        if field == "":
+            rep.fail("%s has an EMPTY password" % ACCOUNT, "sudo usermod -p '*' %s" % ACCOUNT)
+        elif field.startswith("!") and usepam == "no":
+            rep.fail("%s is locked and sshd has UsePAM off; sshd refuses key logins for "
+                     "locked accounts" % ACCOUNT,
+                     ["sudo usermod -p '*' %s   (no usable password, but not locked)" % ACCOUNT])
+        elif field.startswith("$"):
+            rep.warn("%s has a password set; it needs none (password login is disabled "
+                     "for it anyway)" % ACCOUNT, "sudo usermod -p '*' %s" % ACCOUNT)
+        else:
+            rep.ok("%s has no usable password (key login only)" % ACCOUNT)
+
+
+def check_sudo(ctx, rep):
+    rep.section("sudo rule")
+    st = secure_path(ctx, rep, SUDOERS_PATH, "sudoers file")
+    if st is not None:
+        if stat.S_IMODE(st.st_mode) & 0o037:
+            rep.fail("sudoers file mode should be 0440 (%s)" % describe_owner(st),
+                     "sudo chmod 0440 %s" % SUDOERS_PATH)
+        mine = read_bytes(ctx.template("sudoers.d", "wgmanager"))
+        if mine is not None and read_bytes(ctx.p(SUDOERS_PATH)) != mine:
+            rep.warn("the installed sudoers file differs from this checkout")
+        code, out, err = ctx.run(["visudo", "-cf", SUDOERS_PATH])
+        if code == 0:
+            rep.ok("sudoers file parses cleanly")
+        else:
+            rep.fail("sudoers file does not parse: %s"
+                     % ((err or out).strip().splitlines() or ["visudo failed"])[0],
+                     "sudo rm -f %s   (then reinstall)" % SUDOERS_PATH)
+
+    code, out, err = ctx.run(["sudo", "-n", "-l", "-U", ACCOUNT])
+    text = out + err
+    if code != 0 or "not allowed to run sudo" in text:
+        rep.fail("%s is not allowed to run any sudo command, so the helper cannot be reached" % ACCOUNT)
+    else:
+        lines = text.splitlines()
+        rules = []
+        seen = False
+        for line in lines:
+            if "may run the following commands" in line:
+                seen = True
+                continue
+            if seen and line.strip().startswith("("):
+                rules.append(" ".join(line.split()))
+        if rules == [SUDO_RULE]:
+            rep.ok("%s may run exactly one command via sudo: the helper with --ssh" % ACCOUNT)
+        elif SUDO_RULE in rules:
+            extra = [r for r in rules if r != SUDO_RULE]
+            rep.fail("%s can run more than the helper: %s" % (ACCOUNT, "; ".join(extra)),
+                     "remove the extra sudoers rule(s) for %s" % ACCOUNT)
+        else:
+            rep.fail("%s lacks the helper rule (sudo reports: %s)" % (ACCOUNT, "; ".join(rules) or "nothing"))
+
+    code, out, err = ctx.run(["visudo", "-c"])
+    if code != 0:
+        # Not necessarily ours: a different broken file makes sudo unusable for everyone.
+        details = [ln.strip() for ln in (out + err).splitlines()
+                   if "bad permissions" in ln or "parse error" in ln or "syntax" in ln][:3]
+        fixes = []
+        for ln in details:
+            match = re.match(r"(/\S+): bad permissions, should be mode (\d+)", ln)
+            if match:
+                fixes.append("sudo chmod %s %s" % (match.group(2), match.group(1)))
+        rep.warn("sudo reports a problem somewhere in its configuration (possibly not wgmanager's): %s"
+                 % ("; ".join(details) or "run visudo -c for details"), fixes)
+
+
+def check_sshd(ctx, rep):
+    rep.section("sshd")
+    secure_path(ctx, rep, SSHD_DROPIN_PATH, "sshd drop-in")
+    mine = read_bytes(ctx.template("ssh", "sshd_config.d", "wgmanager.conf"))
+    if mine is not None and os.path.exists(ctx.p(SSHD_DROPIN_PATH)) \
+            and read_bytes(ctx.p(SSHD_DROPIN_PATH)) != mine:
+        rep.warn("the installed sshd drop-in differs from this checkout")
+
+    code, _, err = ctx.run(["sshd", "-t"])
+    if code == 0:
+        rep.ok("sshd configuration is valid (sshd -t)")
+    else:
+        first = (err.strip().splitlines() or ["sshd -t failed"])[0]
+        rep.fail("sshd configuration is invalid: %s" % first)
+
+    code, eff, err = ctx.sshd_effective()
+    if code != 0:
+        rep.fail("could not ask sshd for its effective settings: %s"
+                 % ((err.strip().splitlines() or ["sshd -T failed"])[0]))
+        return
+
+    if not eff.get("forcecommand") or eff["forcecommand"][0] in ("none", ""):
+        rep.fail("sshd is not applying the wgmanager drop-in to user %s" % ACCOUNT,
+                 ["make sure /etc/ssh/sshd_config contains: Include /etc/ssh/sshd_config.d/*.conf",
+                  "then: sudo sshd -t && sudo systemctl reload ssh"])
+    else:
+        bad = 0
+        for key, want in SSHD_EXPECT:
+            names = (key,) + SSHD_ALIASES.get(key, ())
+            got = next((eff[n][0] for n in names if n in eff), None)
+            if got is None:
+                mismatch = True
+            elif key in ("forcecommand", "authorizedkeysfile"):
+                mismatch = got != want
+            else:
+                mismatch = BOOLEAN_WORDS.get(got.lower(), got.lower()) != want.lower()
+            if mismatch:
+                bad += 1
+                rep.fail("sshd reports %s = %s for %s, expected %s" % (key, got or "(unset)", ACCOUNT, want),
+                         ["another sshd setting is overriding ours: sshd uses the FIRST value it finds, "
+                          "so check files in /etc/ssh/sshd_config.d/ that sort before wgmanager.conf",
+                          "inspect with: sudo sshd -T -C %s | grep -i %s" % (SSHD_PROBE, key)])
+        if not bad:
+            rep.ok("sshd restricts %s to key login and the forced helper command "
+                   "(no tty, no forwarding)" % ACCOUNT)
+
+    groups_code, groups_out, _ = ctx.run(["id", "-nG", ACCOUNT])
+    groups = groups_out.split() if groups_code == 0 else [ACCOUNT]
+    for key, kind in (("allowusers", "user"), ("allowgroups", "group")):
+        if eff.get(key):
+            patterns = eff[key][0].split()
+            values = [ACCOUNT] if kind == "user" else groups
+            if not any(ssh_pattern_matches(patterns, v) for v in values):
+                rep.fail("sshd %s does not include %s (it lists: %s), so it can never log in"
+                         % (SSHD_KEY_NAMES[key],
+                            ACCOUNT if kind == "user" else "its group", " ".join(patterns)),
+                         "add %s to %s in /etc/ssh/sshd_config (or a drop-in), then reload sshd"
+                         % (ACCOUNT if kind == "user" else "its group", key))
+            else:
+                rep.ok("sshd %s allows %s" % (key, ACCOUNT))
+    for key, kind in (("denyusers", "user"), ("denygroups", "group")):
+        if eff.get(key):
+            patterns = eff[key][0].split()
+            values = [ACCOUNT] if kind == "user" else groups
+            if any(ssh_pattern_matches(patterns, v) for v in values):
+                rep.fail("sshd %s blocks %s" % (key, ACCOUNT),
+                         "remove the matching entry from %s, then reload sshd" % key)
+
+    port = (eff.get("port") or ["22"])[0]
+    listen = ", ".join(eff.get("listenaddress", []))
+    rep.info("sshd listens on port %s%s (set this as the SSH port for the web app)"
+             % (port, " (%s)" % listen if listen else ""))
+
+
+def check_authorized_keys(ctx, rep):
+    rep.section("Authorized key")
+    secure_path(ctx, rep, CONFIG_DIR, "config directory", want_dir=True)
+    st = secure_path(ctx, rep, AUTHORIZED_KEYS_PATH, "authorized_keys")
+    if st is None:
+        return
+    text = (read_bytes(ctx.p(AUTHORIZED_KEYS_PATH)) or b"").decode("utf-8", "replace")
+    keys = 0
+    for number, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = KEYLINE_RE.match(line)
+        where = "authorized_keys line %d" % number
+        if not match or KEY_TYPES_RE.match(match.group("opts")):
+            rep.fail("%s has no options in front of the key; it would not be restricted to the helper" % where)
+            continue
+        keys += 1
+        opts = split_options(match.group("opts"))
+        problems = 0
+        if opts.get("command") != FORCED_COMMAND:
+            problems += 1
+            rep.fail("%s does not force the helper command" % where,
+                     'start the line with: command="%s",restrict,from="..."' % FORCED_COMMAND)
+        if "restrict" not in opts:
+            problems += 1
+            rep.warn("%s lacks the 'restrict' option" % where)
+        sources = opts.get("from")
+        if not isinstance(sources, str) or not sources:
+            problems += 1
+            rep.warn("%s has no from= restriction, so the key works from any address" % where,
+                     'add from="<container subnet>" to the options')
+        elif any(s.strip() in ("*", "0.0.0.0/0", "::/0") for s in sources.split(",")):
+            problems += 1
+            rep.warn("%s allows any source address (from=%s)" % (where, sources))
+        if match.group("type") != "ssh-ed25519":
+            rep.warn("%s uses key type %s (ssh-ed25519 is recommended)" % (where, match.group("type")))
+        if not problems:
+            rep.ok("key %d (%s) is limited to the helper command, allowed from: %s"
+                   % (keys, match.group("comment") or "no comment", sources))
+    if keys == 0:
+        rep.warn("no keys are installed yet, so the web app cannot connect",
+                 "install the app's public key with: sudo python3 %s install --pubkey-file <file>"
+                 % shlex.quote(os.path.join(ctx.here, "wgmanager-host")))
+
+
+HELPER_HINTS = {
+    "host_misconfigured": "see the PiVPN section above; the helper's own log has the path "
+                          "(sudo journalctl -t wgmanager-helper -n 20)",
+    "busy": "another change was in progress; run doctor again",
+    "invalid_request": "the helper rejected the request; is the installed helper an old version? "
+                       "run install to update it",
+}
+
+
+def call_helper(ctx, request):
+    code, out, err = ctx.run(["sudo", "-n", "-u", ACCOUNT, "env", "SSH_ORIGINAL_COMMAND=" + request,
+                              "sudo", "-n", HELPER_PATH, "--ssh"])
+    try:
+        return code, json.loads(out), err
+    except ValueError:
+        return code, None, err or out
+
+
+def check_end_to_end(ctx, rep):
+    rep.section("End to end (as the web app would call it)")
+    code, resp, err = call_helper(ctx, "version")
+    if resp is None:
+        rep.fail("calling the helper through sudo failed: %s"
+                 % ((err.strip().splitlines() or ["no output"])[0]),
+                 "fix the sudo rule and helper installation first (see above)")
+        return
+    if not resp.get("ok"):
+        error = (resp.get("error") or {}).get("code", "unknown")
+        rep.fail("the helper answered with error '%s'" % error, HELPER_HINTS.get(error))
+        return
+    data = resp["data"]
+    rep.ok("helper %s (protocol %s, backend %s, interface %s) answered via sudo"
+           % (data.get("helper_version"), data.get("protocol"), data.get("backend"), data.get("interface")))
+
+    code, resp, err = call_helper(ctx, "list")
+    if resp is None or not resp.get("ok"):
+        error = ((resp or {}).get("error") or {}).get("code", "no answer")
+        rep.fail("listing clients failed (%s)" % error, HELPER_HINTS.get(error))
+        return
+    data = resp["data"]
+    clients = data["clients"]
+    live = sum(1 for c in clients if c.get("live"))
+    enabled = sum(1 for c in clients if c.get("enabled"))
+    iface = data.get("interface", {})
+    rep.ok("%d client(s): %d enabled, %d live" % (len(clients), enabled, live))
+    if not iface.get("up"):
+        rep.warn("WireGuard interface %s is not up" % iface.get("name"))
+    unmanageable = [c["name"] for c in clients if not c.get("manageable", True)]
+    if unmanageable:
+        rep.warn("%d client(s) cannot be managed because PiVPN allows names wgmanager refuses: %s"
+                 % (len(unmanageable), ", ".join(unmanageable)))
+    for warning in data.get("warnings", [])[:5]:
+        rep.warn("helper warning: %s" % warning)
+
+
+# --- commands ----------------------------------------------------------------
+
+def doctor(ctx):
+    rep = Report()
+    if not check_privileges(ctx, rep):
+        return rep
+    check_platform(ctx, rep)
+    try:
+        h = load_helper(ctx)
+    except (OSError, SyntaxError) as exc:
+        rep.fail("cannot load wgmanager-helper next to this script (%s)" % exc)
+        return rep
+    check_pivpn(ctx, rep, h)
+    check_helper_file(ctx, rep, h)
+    check_account(ctx, rep)
+    check_sudo(ctx, rep)
+    check_sshd(ctx, rep)
+    check_authorized_keys(ctx, rep)
+    check_end_to_end(ctx, rep)
+    return rep
+
+
+def main(argv=None, ctx=None, out=None):
+    parser = argparse.ArgumentParser(
+        prog="wgmanager-host",
+        description="Check the host side of wgmanager (read-only).")
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("doctor", help="inspect the host and report problems with fixes")
+    args = parser.parse_args(argv)
+    out = sys.stdout if out is None else out
+    ctx = Host() if ctx is None else ctx
+    color = hasattr(out, "isatty") and out.isatty() and "NO_COLOR" not in os.environ
+    if args.command == "doctor":
+        rep = doctor(ctx)
+        render(rep, out, color)
+        return 1 if rep.failed else 0
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

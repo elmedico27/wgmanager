@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""Test double for PiVPN's `pivpn` command (WireGuard, v4.6.x-era behaviour).
+
+It reproduces the quirks the real scripts have, on purpose:
+  * `remove` / `on` / `off` for an unknown client print "does not exist" and exit 0;
+  * `off` on an already-disabled client does nothing and does not reload;
+  * a failed service reload is not an error (exit 0) -- simulated by ctl/fail_reload.
+
+Layout (relative to this file): ../wg is WG_DIR, ../ctl holds switches,
+../calls.log records every invocation. Never used outside the test suite.
+"""
+import base64
+import hashlib
+import ipaddress
+import os
+import re
+import sys
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+WG = os.path.join(ROOT, "wg")
+CONFIGS = os.path.join(WG, "configs")
+CTL = os.path.join(ROOT, "ctl")
+WG0 = os.path.join(WG, "wg0.conf")
+CLIENTS = os.path.join(CONFIGS, "clients.txt")
+LIVE = os.path.join(WG, "live.txt")
+
+
+def ctl(name):
+    return os.path.exists(os.path.join(CTL, name))
+
+
+def fake_key(name):
+    return base64.b64encode(hashlib.sha256(name.encode()).digest()).decode()
+
+
+def read(path):
+    with open(path) as handle:
+        return handle.read()
+
+
+def write(path, text):
+    with open(path, "w") as handle:
+        handle.write(text)
+
+
+def client_lines():
+    return [ln for ln in read(CLIENTS).split("\n") if ln.strip()]
+
+
+def reload():
+    if ctl("fail_reload"):
+        return
+    live = []
+    for line in read(WG0).split("\n"):
+        match = re.match(r"PublicKey = (\S+)$", line)   # commented lines do not match
+        if match:
+            live.append(match.group(1))
+    write(LIVE, "\n".join(live) + ("\n" if live else ""))
+
+
+def finish(code=0):
+    sys.exit(1 if ctl("exit_nonzero") else code)
+
+
+with open(os.path.join(ROOT, "calls.log"), "a") as log:
+    log.write(" ".join(sys.argv[1:]) + "\n")
+
+if ctl("hang"):
+    time.sleep(60)
+
+args = sys.argv[1:]
+
+if args[:2] == ["add", "-n"] and len(args) == 3:
+    name = args[2]
+    if re.search(r"[^a-zA-Z0-9.@_-]", name) or len(name) > 15 or name[:1] in "-." \
+            or re.fullmatch(r"[0-9]+", name) or name == "server":
+        sys.stderr.write("bad name\n")
+        sys.exit(1)
+    if os.path.exists(os.path.join(CONFIGS, name + ".conf")):
+        sys.stderr.write("exists\n")
+        sys.exit(1)
+    used = {int(ln.split(" ")[3]) for ln in client_lines()}
+    address = int(ipaddress.IPv4Address("10.0.0.2"))
+    while address in used:
+        address += 1
+    dotted = str(ipaddress.IPv4Address(address))
+    pub = fake_key(name)
+    with open(WG0, "a") as handle:
+        handle.write("### begin %s ###\n[Peer]\nPublicKey = %s\nPresharedKey = FAKEPSKSECRET\n"
+                     "AllowedIPs = %s/32\n### end %s ###\n" % (name, pub, dotted, name))
+    with open(CLIENTS, "a") as handle:
+        handle.write("%s %s %d %d\n" % (name, pub, int(time.time()), address))
+    write(os.path.join(CONFIGS, name + ".conf"),
+          "[Interface]\nPrivateKey = FAKEPRIVATEKEY-%s\nAddress = %s/24\nDNS = 10.0.0.1\n\n"
+          "[Peer]\nPublicKey = %s\nPresharedKey = FAKEPSKSECRET\nEndpoint = vpn.example.net:51820\n"
+          "AllowedIPs = 0.0.0.0/0\n" % (name, dotted, fake_key("server")))
+    reload()
+    finish()
+
+if len(args) == 3 and args[0] in ("remove", "on", "off") and args[1] == "--yes":
+    verb, name = args[0], args[2]
+    if not any(ln.split(" ")[0] == name for ln in client_lines()):
+        print("::: %s does not exist" % name)
+        sys.exit(0)                                   # real PiVPN quirk: exit 0
+    lines = read(WG0).split("\n")
+    out, inside = [], False
+    disabled_begin = "#[disabled] ### begin %s ###" % name
+    for line in lines:
+        if line in ("### begin %s ###" % name, disabled_begin):
+            inside = True
+        if inside and verb == "remove":
+            if line in ("### end %s ###" % name, "#[disabled] ### end %s ###" % name):
+                inside = False
+            continue
+        if inside and verb == "off":
+            out.append(line if line.startswith("#[disabled] ") else "#[disabled] " + line)
+        elif inside and verb == "on":
+            out.append(line.replace("#[disabled] ", "", 1))
+        else:
+            out.append(line)
+        if inside and line.endswith("### end %s ###" % name):
+            inside = False
+    if verb == "off" and disabled_begin in lines:
+        print("::: %s is already disabled" % name)
+        sys.exit(0)                                   # no change, no reload
+    write(WG0, "\n".join(out))
+    if verb == "remove":
+        write(CLIENTS, "".join(ln + "\n" for ln in client_lines()
+                               if ln.split(" ")[0] != name))
+        os.unlink(os.path.join(CONFIGS, name + ".conf"))
+    reload()
+    finish()
+
+sys.stderr.write("unexpected arguments\n")
+sys.exit(1)

@@ -1,0 +1,13 @@
+# Optional. Install as /etc/wgmanager/config, owner root, mode 0644 or stricter.
+# Every setting shown is the default; uncomment only to change one.
+# Settings come only from this root-owned file, never from the caller.
+#
+#WG_INTERFACE=wg0
+#WG_DIR=/etc/wireguard
+#PIVPN_BIN=/usr/local/bin/pivpn
+#PIVPN_SCRIPTS_DIR=/opt/pivpn/wireguard
+#PIVPN_SETUPVARS=/etc/pivpn/wireguard/setupVars.conf
+#WG_BIN=/usr/bin/wg
+#BACKUP_DIR=/var/backups/wgmanager
+#BACKUP_KEEP=20
+#LOCK_FILE=/run/wgmanager.lock

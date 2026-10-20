@@ -1,1 +1,31 @@
-/node_modules
+# Dependencies and build output
+__pycache__/
+*.pyc
+node_modules/
+dist/
+build/
+coverage/
+*.log
+
+# Secrets: never commit these. Use .env.example for documented placeholders.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_*
+!id_*.pub.example
+secrets/
+*.local.*
+compose.override.yaml
+docker-compose.override.yml
+
+# Runtime data and generated client configs
+data/
+tmp/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

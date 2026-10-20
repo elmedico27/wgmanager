@@ -1,0 +1,43 @@
+#!/usr/bin/env python3
+"""Test double for `wg show <iface> dump`. The dump deliberately includes secret
+sentinel values so tests can prove they never reach the helper's output."""
+import base64
+import hashlib
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+WG = os.path.join(ROOT, "wg")
+CTL = os.path.join(ROOT, "ctl")
+
+
+def ctl(name):
+    return os.path.exists(os.path.join(CTL, name))
+
+
+def fake_key(name):
+    return base64.b64encode(hashlib.sha256(name.encode()).digest()).decode()
+
+
+if sys.argv[1:] != ["show", "wg0", "dump"]:
+    sys.exit(1)
+if ctl("iface_down"):
+    sys.stderr.write("Unable to access interface: No such device\n")
+    sys.exit(1)
+
+live_path = os.path.join(WG, "live.txt")
+live = []
+if os.path.exists(live_path):
+    live = [ln for ln in open(live_path).read().split("\n") if ln]
+
+# Like the real tool, report whatever is on the *interface*, independent of
+# what clients.txt currently says (they can disagree after a failed reload).
+print("\t".join(["FAKEPRIVSECRET", fake_key("server"), "51820", "off"]))
+for pub in live:
+    if ctl("never_connected"):
+        endpoint, handshake, rx, tx = "(none)", "0", "0", "0"
+    else:
+        endpoint, handshake, rx, tx = "203.0.113.5:51820", "1700000000", "111", "222"
+    print("\t".join([pub, "FAKEPSKSECRET", endpoint, "10.0.0.2/32",
+                     handshake, rx, tx, "off"]))
