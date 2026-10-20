@@ -1,8 +1,9 @@
 #!/usr/bin/python3 -I
-"""wgmanager-host: check (and, in later versions, install and remove) the host
-side of wgmanager.
+"""wgmanager-host: install, check and remove the host side of wgmanager.
 
     sudo python3 host/wgmanager-host doctor
+    sudo python3 host/wgmanager-host install --pubkey-file app_key.pub
+    sudo python3 host/wgmanager-host uninstall
 
 `doctor` is read-only. It changes nothing: it inspects the PiVPN/WireGuard data,
 the installed helper, the `wgweb` service account, the sudo rule, the sshd
@@ -16,17 +17,21 @@ install) come from the helper itself, so the two can never disagree.
 """
 
 import argparse
+import base64
 import fnmatch
 import hashlib
 import importlib.machinery
 import importlib.util
+import ipaddress
 import json
 import os
 import pwd
 import grp
 import re
 import shlex
+import shutil
 import stat
+import struct
 import subprocess
 import sys
 
@@ -105,6 +110,9 @@ class Host:
         self.euid = os.geteuid() if euid is None else euid
         self.settings_loader = settings_loader
         self._sshd = None
+
+    def which(self, name):
+        return shutil.which(name, path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
 
     def p(self, path):
         """Map an absolute host path into the (possibly test) root."""
@@ -593,6 +601,11 @@ def check_sshd(ctx, rep):
 def check_authorized_keys(ctx, rep):
     rep.section("Authorized key")
     secure_path(ctx, rep, CONFIG_DIR, "config directory", want_dir=True)
+    if not os.path.lexists(ctx.p(AUTHORIZED_KEYS_PATH)):
+        rep.warn("no authorized_keys file yet, so the web app cannot connect",
+                 "install the app's public key with: sudo python3 %s install --pubkey-file <file>"
+                 % shlex.quote(os.path.join(ctx.here, "wgmanager-host")))
+        return
     st = secure_path(ctx, rep, AUTHORIZED_KEYS_PATH, "authorized_keys")
     if st is None:
         return
@@ -691,9 +704,576 @@ def check_end_to_end(ctx, rep):
         rep.warn("helper warning: %s" % warning)
 
 
+# --- installing --------------------------------------------------------------
+#
+# install and uninstall share one shape: look at the host, build a PLAN (a list
+# of steps, each marked create / replace / unchanged), show it, ask, then apply.
+# install undoes what it did if any step fails; uninstall is best effort and can
+# simply be run again.
+
+DEFAULT_CONTAINER_SUBNET = "172.29.88.0/29"      # pinned in the compose file too
+DEFAULT_SOURCES = ("127.0.0.1", "::1", DEFAULT_CONTAINER_SUBNET)
+ACCOUNT_COMMENT = "wgmanager service account"
+ALLOWED_KEY_TYPES = ("ssh-ed25519", "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384",
+                     "ecdsa-sha2-nistp521", "ssh-rsa")
+KEYS_HEADER = ("# Managed by wgmanager-host. Each key may only run the helper, and only from\n"
+               "# the listed addresses. Edit with: wgmanager-host install --pubkey-file ...\n")
+
+
+class InstallError(Exception):
+    """A problem that stops install/uninstall; the message is shown to the user."""
+
+
+class Step:
+    def __init__(self, title, state, apply=None, undo=None):
+        self.title, self.state, self.apply, self.undo = title, state, apply, undo
+
+
+def parse_pubkey(text):
+    """Validate a public key and return its parts. Refuses anything that could
+    smuggle options or a private key into authorized_keys."""
+    text = text.strip()
+    if "PRIVATE KEY" in text:
+        raise InstallError("that is a PRIVATE key. Never share it; use the public half "
+                           "(the .pub file, a single line starting with ssh-ed25519)")
+    lines = [ln for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
+    if len(lines) != 1:
+        raise InstallError("expected exactly one public key line, found %d" % len(lines))
+    parts = lines[0].split(None, 2)
+    if len(parts) < 2 or parts[0] not in ALLOWED_KEY_TYPES:
+        raise InstallError("the key must start with a key type (%s); options such as command= "
+                           "are not accepted, the tool adds its own" % ", ".join(ALLOWED_KEY_TYPES))
+    try:
+        blob = base64.b64decode(parts[1], validate=True)
+        size = struct.unpack(">I", blob[:4])[0]
+        embedded = blob[4:4 + size].decode("ascii")
+    except (ValueError, struct.error, UnicodeDecodeError):
+        raise InstallError("the key data is not valid base64 public key material")
+    if embedded != parts[0]:
+        raise InstallError("the key type (%s) does not match the key data (%s)" % (parts[0], embedded))
+    comment = re.sub(r"[^A-Za-z0-9_.@-]", "_", parts[2].strip() if len(parts) > 2 else "")[:64]
+    return {
+        "type": parts[0], "b64": parts[1], "blob": blob, "comment": comment or "wgmanager",
+        "fingerprint": "SHA256:" + base64.b64encode(hashlib.sha256(blob).digest()).decode().rstrip("="),
+    }
+
+
+def parse_sources(text):
+    """Validate a comma-separated list of IP addresses / CIDR networks."""
+    sources = []
+    for item in text.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            network = ipaddress.ip_network(item, strict=False)
+        except ValueError:
+            raise InstallError("'%s' is not an IP address or CIDR network (host names and "
+                               "wildcards are not accepted)" % item)
+        if network.prefixlen == 0:
+            raise InstallError("'%s' would allow every address; give the container network "
+                               "(for example %s)" % (item, DEFAULT_CONTAINER_SUBNET))
+        sources.append(item)
+    if not sources:
+        raise InstallError("no source addresses given")
+    return sources
+
+
+def key_line(key, sources):
+    return 'command="%s",restrict,from="%s" %s %s %s\n' % (
+        FORCED_COMMAND, ",".join(sources), key["type"], key["b64"], key["comment"])
+
+
+def keys_file_text(key, sources):
+    return KEYS_HEADER + key_line(key, sources)
+
+
+def existing_blobs(text):
+    blobs = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = KEYLINE_RE.match(line)
+        if match:
+            blobs.append(match.group("blob"))
+    return blobs
+
+
+def write_atomic(ctx, path, data, mode, validate=None):
+    """Write `data` to `path` via a temp file in the same directory (a name sudo
+    and sshd both ignore), validate it there, then rename into place."""
+    real = ctx.p(path)
+    directory = os.path.dirname(real)
+    if not os.path.isdir(directory):
+        raise InstallError("directory %s does not exist" % os.path.dirname(path))
+    try:
+        st = os.lstat(real)
+        if not stat.S_ISREG(st.st_mode):
+            raise InstallError("%s exists and is not a regular file; refusing to replace it" % path)
+    except FileNotFoundError:
+        pass
+    tmp = os.path.join(directory, ".wgmanager-install.%d.tmp" % os.getpid())
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fchmod(handle.fileno(), mode)
+            if ctx.root == "/":
+                os.fchown(handle.fileno(), 0, 0)
+            os.fsync(handle.fileno())
+        if validate:
+            validate(tmp)
+        os.replace(tmp, real)
+    finally:
+        if os.path.lexists(tmp):
+            os.unlink(tmp)
+
+
+def restore(ctx, path, previous, mode):
+    """Put a file back to what it was (previous bytes), or remove it."""
+    real = ctx.p(path)
+    if previous is None:
+        if os.path.lexists(real):
+            os.unlink(real)
+    else:
+        write_atomic(ctx, path, previous, mode)
+
+
+def file_step(ctx, title, path, data, mode, validate=None):
+    """A step that installs `data` at `path`; its undo restores what was there.
+
+    Built by a function so every step keeps its OWN copy of the previous content
+    (closures in a loop or a long function would all share the last one).
+    """
+    state, previous = state_of(ctx, path, data)
+    return Step(title, state,
+                lambda: write_atomic(ctx, path, data, mode, validate),
+                lambda: restore(ctx, path, previous, mode))
+
+
+def dir_problem(ctx, path):
+    try:
+        st = os.lstat(ctx.p(path))
+    except OSError:
+        return "does not exist"
+    if not stat.S_ISDIR(st.st_mode):
+        return "is not a directory"
+    if st.st_uid != ctx.expected_uid:
+        return "is not owned by root"
+    if st.st_mode & 0o022:
+        return "is writable by group or others"
+    return None
+
+
+def state_of(ctx, path, wanted):
+    current = read_bytes(ctx.p(path))
+    if current is None:
+        return "create", None
+    return ("unchanged" if current == wanted else "replace"), current
+
+
+def service_name(ctx):
+    for name in ("ssh", "sshd"):
+        if ctx.run(["systemctl", "is-active", name])[0] == 0:
+            return name
+    return None
+
+
+def preflight_install(ctx, h, args):
+    """Everything that must be true before we touch anything. Raises InstallError."""
+    if ctx.euid != 0:
+        raise InstallError("must run as root: sudo python3 %s"
+                           % os.path.join(ctx.here, "wgmanager-host"))
+    for tool in ("useradd", "visudo", "sshd", "systemctl"):
+        if not ctx.which(tool):
+            raise InstallError("required tool not found: %s" % tool)
+    try:
+        settings = ctx.settings_loader(h) if ctx.settings_loader else \
+            h.load_settings(ctx.p(h.DEFAULT_CONFIG_PATH), True)
+    except h.HelperError:
+        raise InstallError("%s is not a valid settings file; run doctor for details"
+                           % os.path.join(CONFIG_DIR, "config"))
+    problems = h.preflight_problems(settings)
+    if problems:
+        raise InstallError("the PiVPN/WireGuard side of this host has problems (%s); "
+                           "run 'doctor' to see each one with its fix, then try again"
+                           % ", ".join("%s %s" % (w, k) for w, _, k in problems))
+    problem = dir_problem(ctx, HELPER_DIR)
+    if problem:
+        raise InstallError("%s %s; refusing to install a root-run program there" % (HELPER_DIR, problem))
+
+    # sshd must load drop-ins, and the whole config must already be valid.
+    config = (read_bytes(ctx.p("/etc/ssh/sshd_config")) or b"").decode("utf-8", "replace")
+    if not re.search(r"^\s*Include\s+\S*sshd_config\.d", config, re.I | re.M):
+        raise InstallError("/etc/ssh/sshd_config has no 'Include /etc/ssh/sshd_config.d/*.conf' line, "
+                           "so sshd would ignore our drop-in. wgmanager never edits your main sshd "
+                           "config; add that line yourself, then run install again")
+    code, _, err = ctx.run(["sshd", "-t"])
+    if code != 0:
+        raise InstallError("sshd's configuration is already invalid, so it is not safe to add to it: %s"
+                           % ((err.strip().splitlines() or ["sshd -t failed"])[0]))
+    code, eff, err = ctx.run(["sshd", "-T"])
+    if code == 0:
+        parsed = parse_sshd_t(eff)
+        for key in ("allowusers", "allowgroups"):
+            if parsed.get(key):
+                # The account will get a same-named primary group, so one name covers both.
+                if not ssh_pattern_matches(parsed[key][0].split(), ACCOUNT):
+                    raise InstallError("sshd %s is set (%s) and does not include %s, so it could never "
+                                       "log in. Add %s to it (or a group matching it), then run install "
+                                       "again" % (SSHD_KEY_NAMES[key], parsed[key][0], ACCOUNT, ACCOUNT))
+        for key in ("denyusers",):
+            if parsed.get(key) and ssh_pattern_matches(parsed[key][0].split(), ACCOUNT):
+                raise InstallError("sshd DenyUsers blocks %s" % ACCOUNT)
+    unit = service_name(ctx)
+    if unit is None:
+        raise InstallError("could not find a running ssh service (tried 'ssh' and 'sshd')")
+    return unit
+
+
+def plan_install(ctx, h, args):
+    unit = preflight_install(ctx, h, args)
+    notes, steps = [], []
+
+    # inputs
+    key = None
+    if args.pubkey_file and args.pubkey:
+        raise InstallError("give either --pubkey-file or --pubkey, not both")
+    if args.pubkey_file:
+        try:
+            text = read_bytes(args.pubkey_file)
+        except OSError:
+            text = None
+        if text is None:
+            raise InstallError("cannot read %s" % args.pubkey_file)
+        if len(text) > 8192:
+            raise InstallError("%s is too large to be a public key" % args.pubkey_file)
+        key = parse_pubkey(text.decode("utf-8", "replace"))
+    elif args.pubkey:
+        key = parse_pubkey(args.pubkey)
+    sources = parse_sources(args.allow_from) if args.allow_from else list(DEFAULT_SOURCES)
+
+    # service account
+    try:
+        pw = ctx.getpwnam(ACCOUNT)
+    except KeyError:
+        pw = None
+    if pw is not None:
+        if pw.pw_uid >= 1000 or os.path.basename(pw.pw_shell or "") in ("nologin", "false", ""):
+            raise InstallError("a user named %s already exists and is not a suitable system account "
+                               "(uid %d, shell %s); rename or remove it first"
+                               % (ACCOUNT, pw.pw_uid, pw.pw_shell))
+    helper_bytes = read_bytes(os.path.join(ctx.here, "wgmanager-helper"))
+    if helper_bytes is None:
+        raise InstallError("cannot read wgmanager-helper next to this script")
+    sudoers_bytes = read_bytes(ctx.template("sudoers.d", "wgmanager"))
+    dropin_bytes = read_bytes(ctx.template("ssh", "sshd_config.d", "wgmanager.conf"))
+    if sudoers_bytes is None or dropin_bytes is None:
+        raise InstallError("the host/etc templates are missing next to this script")
+
+    # 1. helper
+    steps.append(file_step(ctx, "helper program %s (0755, root)" % HELPER_PATH,
+                           HELPER_PATH, helper_bytes, 0o755))
+
+    # 2. account
+    def make_account():
+        code, _, err = ctx.run(["useradd", "--system", "--user-group", "--home-dir", "/nonexistent",
+                                "--no-create-home", "--shell", "/bin/sh", "--comment", ACCOUNT_COMMENT, ACCOUNT])
+        if code != 0:
+            raise InstallError("useradd failed: %s" % ((err.strip().splitlines() or ["?"])[0]))
+
+    def remove_account():
+        ctx.run(["userdel", ACCOUNT])
+    steps.append(Step("service account %s (system user, no home, no password)" % ACCOUNT,
+                      "unchanged" if pw else "create", make_account, remove_account))
+
+    # 3. config directory
+    dir_exists = os.path.isdir(ctx.p(CONFIG_DIR))
+
+    def make_config_dir():
+        os.makedirs(ctx.p(CONFIG_DIR), mode=0o755, exist_ok=True)
+        if ctx.root == "/":
+            os.chown(CONFIG_DIR, 0, 0)
+        os.chmod(ctx.p(CONFIG_DIR), 0o755)
+
+    def drop_config_dir():
+        try:
+            os.rmdir(ctx.p(CONFIG_DIR))
+        except OSError:
+            pass
+    steps.append(Step("config directory %s (0755, root)" % CONFIG_DIR,
+                      "unchanged" if dir_exists else "create", make_config_dir, drop_config_dir))
+
+    # 4. authorized key
+    if key is None:
+        current = read_bytes(ctx.p(AUTHORIZED_KEYS_PATH))
+        notes.append("No --pubkey-file given: the key is not installed. Run install again with "
+                     "the app's public key once it exists%s." %
+                     (" (a key is already installed and was left alone)"
+                      if current and existing_blobs(current.decode('utf-8', 'replace')) else ""))
+    else:
+        wanted = keys_file_text(key, sources).encode()
+        current = read_bytes(ctx.p(AUTHORIZED_KEYS_PATH))
+        if current is not None and current != wanted:
+            have = existing_blobs(current.decode("utf-8", "replace"))
+            if any(blob != key["b64"] for blob in have) and not args.replace_key:
+                raise InstallError("%s already holds a different key. To replace it, run install "
+                                   "again with --replace-key" % AUTHORIZED_KEYS_PATH)
+        steps.append(file_step(
+            ctx, "authorized key %s %s (limited to the helper command, from: %s)"
+            % (key["type"], key["fingerprint"], ", ".join(sources)),
+            AUTHORIZED_KEYS_PATH, wanted, 0o644))
+
+    # 5. sudo rule (validated in a temp file before it is put in place)
+    def check_sudoers(tmp):
+        code, out, err = ctx.run(["visudo", "-cf", tmp])
+        if code != 0:
+            raise InstallError("visudo rejected the sudo rule: %s"
+                               % ((err or out).strip().splitlines() or ["?"])[0])
+    steps.append(file_step(
+        ctx, "sudo rule %s (0440): %s may run only the helper with --ssh" % (SUDOERS_PATH, ACCOUNT),
+        SUDOERS_PATH, sudoers_bytes, 0o440, check_sudoers))
+
+    # 6. sshd drop-in, last: it is the only step that changes who can log in
+    state, dropin_previous = state_of(ctx, SSHD_DROPIN_PATH, dropin_bytes)
+    reloaded = []
+
+    def apply_sshd():
+        os.makedirs(ctx.p(os.path.dirname(SSHD_DROPIN_PATH)), exist_ok=True)
+        write_atomic(ctx, SSHD_DROPIN_PATH, dropin_bytes, 0o644)
+        code, _, err = ctx.run(["sshd", "-t"])
+        if code != 0:
+            raise InstallError("sshd rejected the new configuration: %s"
+                               % ((err.strip().splitlines() or ["?"])[0]))
+        code, eff, _ = ctx.run(["sshd", "-T", "-C", SSHD_PROBE])
+        forced = parse_sshd_t(eff).get("forcecommand", [""])[0] if code == 0 else ""
+        if forced != FORCED_COMMAND:
+            raise InstallError("sshd did not pick up the drop-in (forcecommand is '%s')" % (forced or "unset"))
+        code, _, err = ctx.run(["systemctl", "reload", unit])
+        if code != 0:
+            raise InstallError("could not reload sshd: %s" % ((err.strip().splitlines() or ["?"])[0]))
+        reloaded.append(True)
+
+    def undo_sshd():
+        restore(ctx, SSHD_DROPIN_PATH, dropin_previous, 0o644)
+        if reloaded and ctx.run(["sshd", "-t"])[0] == 0:
+            ctx.run(["systemctl", "reload", unit])
+    steps.append(Step(
+        "sshd drop-in %s (0644) + reload %s; existing SSH sessions are not affected" % (SSHD_DROPIN_PATH, unit),
+        state, apply_sshd, undo_sshd))
+    return steps, notes
+
+
+def run_steps(steps, out):
+    """Apply steps in order; on failure undo the ones already applied."""
+    done = []
+    try:
+        for step in steps:
+            if step.state == "unchanged":
+                continue
+            out.write("  ... %s\n" % step.title)
+            done.append(step)
+            step.apply()
+    except Exception as exc:                      # includes InstallError
+        out.write("\nFAILED: %s\nRolling back what was changed ...\n" % exc)
+        for step in reversed(done):
+            try:
+                step.undo()
+                out.write("  undone: %s\n" % step.title)
+            except Exception as undo_exc:         # keep going; report honestly
+                out.write("  COULD NOT UNDO (%s): %s\n" % (undo_exc, step.title))
+        raise InstallError(str(exc))
+
+
+def print_plan(steps, notes, out, heading):
+    out.write("%s\n" % heading)
+    for step in steps:
+        out.write("  %-9s %s\n" % (step.state, step.title))
+    for note in notes:
+        out.write("\nnote: %s\n" % note)
+    out.write("\n")
+
+
+def confirm(args, out, interactive, input_fn):
+    if args.yes:
+        return True
+    if not interactive:
+        out.write("Not running interactively; re-run with --yes to apply, or --dry-run to preview.\n")
+        return False
+    return input_fn("Proceed? [y/N] ").strip().lower() in ("y", "yes")
+
+
+def install(ctx, args, out, interactive=False, input_fn=input):
+    h = load_helper(ctx)
+    try:
+        steps, notes = plan_install(ctx, h, args)
+    except InstallError as exc:
+        out.write("Cannot install: %s\n" % exc)
+        return 1
+    print_plan(steps, notes, out, "Plan:")
+    pending = [s for s in steps if s.state != "unchanged"]
+    if args.dry_run:
+        out.write("Dry run: nothing was changed.\n")
+        return 0
+    if pending and not confirm(args, out, interactive, input_fn):
+        out.write("Nothing was changed.\n")
+        return 1
+    if not pending:
+        out.write("Nothing to do: everything is already in place.\n")
+    else:
+        try:
+            run_steps(steps, out)
+        except InstallError:
+            out.write("\nInstall failed and was rolled back. Check the output above, then run "
+                      "'doctor' to see the host's state.\n")
+            return 1
+        out.write("\nInstalled.\n")
+    rep = doctor(ctx)
+    render(rep, out, False)
+    return 1 if rep.failed else 0
+
+
+# --- uninstalling ------------------------------------------------------------
+
+def plan_uninstall(ctx, args):
+    if ctx.euid != 0:
+        raise InstallError("must run as root: sudo python3 %s"
+                           % os.path.join(ctx.here, "wgmanager-host"))
+    steps, notes = [], []
+    unit = service_name(ctx) or "ssh"
+
+    def present(path):
+        return os.path.lexists(ctx.p(path))
+
+    def remove_sshd():
+        previous = read_bytes(ctx.p(SSHD_DROPIN_PATH))
+        os.unlink(ctx.p(SSHD_DROPIN_PATH))
+        code, _, err = ctx.run(["sshd", "-t"])
+        if code != 0:
+            restore(ctx, SSHD_DROPIN_PATH, previous, 0o644)
+            raise InstallError("sshd would not accept its configuration without the drop-in "
+                               "(%s); the drop-in was put back and nothing else was removed"
+                               % ((err.strip().splitlines() or ["?"])[0]))
+        code, _, err = ctx.run(["systemctl", "reload", unit])
+        if code != 0:
+            raise InstallError("could not reload sshd: %s" % ((err.strip().splitlines() or ["?"])[0]))
+    steps.append(Step("sshd drop-in %s + reload %s" % (SSHD_DROPIN_PATH, unit),
+                      "remove" if present(SSHD_DROPIN_PATH) else "unchanged", remove_sshd))
+
+    def remove_file(path):
+        return lambda: os.unlink(ctx.p(path))
+    steps.append(Step("authorized key file %s" % AUTHORIZED_KEYS_PATH,
+                      "remove" if present(AUTHORIZED_KEYS_PATH) else "unchanged",
+                      remove_file(AUTHORIZED_KEYS_PATH)))
+    steps.append(Step("sudo rule %s" % SUDOERS_PATH,
+                      "remove" if present(SUDOERS_PATH) else "unchanged", remove_file(SUDOERS_PATH)))
+    steps.append(Step("helper program %s" % HELPER_PATH,
+                      "remove" if present(HELPER_PATH) else "unchanged", remove_file(HELPER_PATH)))
+
+    try:
+        pw = ctx.getpwnam(ACCOUNT)
+    except KeyError:
+        pw = None
+
+    def remove_account():
+        code, _, err = ctx.run(["userdel", ACCOUNT])
+        if code != 0:
+            raise InstallError("userdel failed: %s. If %s still has a session, end it "
+                               "(sudo pkill -u %s) and run uninstall again"
+                               % ((err.strip().splitlines() or ["?"])[0], ACCOUNT, ACCOUNT))
+    if pw is None:
+        steps.append(Step("service account %s" % ACCOUNT, "unchanged"))
+    elif pw.pw_uid >= 1000 or pw.pw_dir != "/nonexistent":
+        steps.append(Step("service account %s" % ACCOUNT, "unchanged"))
+        notes.append("User %s looks like an ordinary account (uid %d, home %s), not the one this tool "
+                     "creates, so it was left alone." % (ACCOUNT, pw.pw_uid, pw.pw_dir))
+    else:
+        steps.append(Step("service account %s" % ACCOUNT, "remove", remove_account))
+
+    config_file = os.path.join(CONFIG_DIR, "config")
+
+    def remove_config_dir():
+        if args.purge and present(config_file):
+            os.unlink(ctx.p(config_file))
+        try:
+            os.rmdir(ctx.p(CONFIG_DIR))
+        except OSError:
+            pass
+    steps.append(Step("config directory %s (if empty%s)" % (CONFIG_DIR, "; settings file too" if args.purge else ""),
+                      "remove" if present(CONFIG_DIR) else "unchanged", remove_config_dir))
+
+    backup_dir = "/var/backups/wgmanager"
+    backup_name_re = None
+    try:
+        h = load_helper(ctx)
+        backup_name_re = h.BACKUP_FILE_RE
+        settings = ctx.settings_loader(h) if ctx.settings_loader else \
+            h.load_settings(ctx.p(h.DEFAULT_CONFIG_PATH), False)
+        backup_dir = settings.backup_dir
+    except Exception:
+        pass
+
+    def purge_backups():
+        # Only files named like the helper's own backups are deleted, then the
+        # directory if that leaves it empty. Never a recursive delete of a
+        # configurable path.
+        for name in os.listdir(backup_dir):
+            if backup_name_re is not None and backup_name_re.fullmatch(name):
+                os.unlink(os.path.join(backup_dir, name))
+        try:
+            os.rmdir(backup_dir)
+        except OSError:
+            pass
+    if args.purge:
+        steps.append(Step("backups in %s (copies of your WireGuard config; deleted for good)" % backup_dir,
+                          "remove" if os.path.isdir(backup_dir) else "unchanged", purge_backups))
+    elif os.path.isdir(backup_dir):
+        notes.append("Backups in %s were kept (use --purge to delete them)." % backup_dir)
+    return steps, notes
+
+
+def uninstall(ctx, args, out, interactive=False, input_fn=input):
+    try:
+        steps, notes = plan_uninstall(ctx, args)
+    except InstallError as exc:
+        out.write("Cannot uninstall: %s\n" % exc)
+        return 1
+    print_plan(steps, notes, out, "Plan:")
+    pending = [s for s in steps if s.state != "unchanged"]
+    if not pending:
+        out.write("Nothing to remove: wgmanager's host side is not installed.\n")
+        return 0
+    if args.dry_run:
+        out.write("Dry run: nothing was changed.\n")
+        return 0
+    if not confirm(args, out, interactive, input_fn):
+        out.write("Nothing was changed.\n")
+        return 1
+    failed = False
+    for step in pending:
+        out.write("  ... %s\n" % step.title)
+        try:
+            step.apply()
+        except InstallError as exc:
+            failed = True
+            out.write("  FAILED: %s\n" % exc)
+            if step.title.startswith("sshd drop-in"):
+                out.write("Stopping here; nothing after the sshd step was touched.\n")
+                return 1
+        except OSError as exc:
+            failed = True
+            out.write("  FAILED: %s\n" % exc)
+    out.write("\n%s\n" % ("Finished with problems; fix them and run uninstall again." if failed
+                          else "Uninstalled."))
+    return 1 if failed else 0
+
+
 # --- commands ----------------------------------------------------------------
 
 def doctor(ctx):
+    ctx._sshd = None                     # always ask sshd afresh (install may just have changed it)
     rep = Report()
     if not check_privileges(ctx, rep):
         return rep
@@ -713,20 +1293,53 @@ def doctor(ctx):
     return rep
 
 
-def main(argv=None, ctx=None, out=None):
+def build_parser():
     parser = argparse.ArgumentParser(
         prog="wgmanager-host",
-        description="Check the host side of wgmanager (read-only).")
+        description="Install, check and remove the host side of wgmanager. Run as root.")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("doctor", help="inspect the host and report problems with fixes")
-    args = parser.parse_args(argv)
+
+    sub.add_parser("doctor", help="inspect the host and report problems with fixes (read-only)")
+
+    inst = sub.add_parser(
+        "install", help="install or update the helper, service account, sudo rule, sshd drop-in and key",
+        description="Installs everything the web app needs on this host. Safe to run again: it "
+                    "only changes what differs, and undoes its own changes if a step fails.")
+    inst.add_argument("--pubkey-file", metavar="FILE",
+                      help="the web app's PUBLIC key (a .pub file); without it, no key is installed yet")
+    inst.add_argument("--pubkey", metavar="TEXT", help="the public key as text, instead of --pubkey-file")
+    inst.add_argument("--allow-from", metavar="LIST",
+                      help="comma-separated IPs/CIDRs the key may connect from (default: %s)"
+                           % ",".join(DEFAULT_SOURCES))
+    inst.add_argument("--replace-key", action="store_true",
+                      help="replace a different key that is already installed")
+    inst.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+    inst.add_argument("--dry-run", action="store_true", help="show the plan and stop")
+
+    rem = sub.add_parser(
+        "uninstall", help="remove what install added (backups are kept unless --purge)")
+    rem.add_argument("--purge", action="store_true",
+                     help="also delete the helper's backups and settings file")
+    rem.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+    rem.add_argument("--dry-run", action="store_true", help="show the plan and stop")
+    return parser
+
+
+def main(argv=None, ctx=None, out=None, interactive=None, input_fn=input):
+    args = build_parser().parse_args(argv)
     out = sys.stdout if out is None else out
     ctx = Host() if ctx is None else ctx
+    if interactive is None:
+        interactive = sys.stdin.isatty()
     color = hasattr(out, "isatty") and out.isatty() and "NO_COLOR" not in os.environ
     if args.command == "doctor":
         rep = doctor(ctx)
         render(rep, out, color)
         return 1 if rep.failed else 0
+    if args.command == "install":
+        return install(ctx, args, out, interactive, input_fn)
+    if args.command == "uninstall":
+        return uninstall(ctx, args, out, interactive, input_fn)
     return 2
 
 

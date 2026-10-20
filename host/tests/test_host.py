@@ -118,6 +118,8 @@ class World:
         os.makedirs(self.real(path), exist_ok=True)
 
     def raw_write(self, full, text, mode=0o644):
+        if os.path.lexists(full):
+            os.unlink(full)          # an earlier mode (e.g. 0440) may forbid reopening for write
         with open(full, "w") as handle:
             handle.write(text)
         os.chmod(full, mode)
@@ -451,9 +453,11 @@ class AuthorizedKeysTests(DoctorTestCase):
     def keys(self, text, mode=0o644):
         self.world.write(wh.AUTHORIZED_KEYS_PATH, text, mode)
 
-    def test_missing_file(self):
+    def test_missing_file_is_a_warning_not_a_failure(self):
         os.unlink(self.world.real(wh.AUTHORIZED_KEYS_PATH))
-        self.assertFailMentions(self.doctor(), "authorized_keys is missing")
+        rep = self.doctor()
+        self.assertEqual(self.texts(rep, "fail"), [])
+        self.assertIn("no authorized_keys file yet", "\n".join(self.texts(rep, "warn")))
 
     def test_no_keys_yet_is_a_warning(self):
         self.keys("# nothing yet\n")
