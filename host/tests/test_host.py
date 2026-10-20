@@ -310,6 +310,59 @@ class HelperFileTests(DoctorTestCase):
         self.assertFailMentions(self.doctor(), "not executable")
 
 
+class NotInstalledTests(DoctorTestCase):
+    """A fresh host, or a half-removed one, should read as 'run install', not as a wall of errors."""
+
+    def uninstall_everything(self):
+        for path in (wh.HELPER_PATH, wh.SUDOERS_PATH, wh.SSHD_DROPIN_PATH, wh.AUTHORIZED_KEYS_PATH):
+            os.unlink(self.world.real(path))
+        os.rmdir(self.world.real(wh.CONFIG_DIR))
+        self.world.pw = None
+
+    def test_nothing_installed_is_one_clear_failure(self):
+        self.uninstall_everything()
+        rep = self.doctor()
+        fails = self.texts(rep, "fail")
+        self.assertEqual(len(fails), 1, fails)
+        self.assertIn("not installed", fails[0])
+        self.assertIn("install", "\n".join(self.fixes(rep, "fail")))
+        self.assertNotIn("Include", "\n".join(self.fixes(rep, "fail")))
+
+    def test_pivpn_problems_are_still_reported_when_nothing_is_installed(self):
+        self.uninstall_everything()
+        self.world.chmod("pv/pivpn-real", 0o775)
+        self.assertFailMentions(self.doctor(), "pivpn is writable", "not installed")
+
+    def test_missing_dropin_alone_says_install_not_include(self):
+        os.unlink(self.world.real(wh.SSHD_DROPIN_PATH))
+        self.world.cmds[("sshd", "-T", "-C", PROBE)] = ok(
+            GOOD_SSHD.replace("forcecommand " + wh.FORCED_COMMAND, "forcecommand none"))
+        rep = self.doctor()
+        self.assertFailMentions(rep, "sshd drop-in is missing", "install")
+        self.assertNotIn("Include", "\n".join(self.fixes(rep, "fail")))
+        self.assertNotIn("not applying", "\n".join(self.texts(rep, "fail")))
+
+    def test_missing_sudoers_alone_is_reported_once(self):
+        os.unlink(self.world.real(wh.SUDOERS_PATH))
+        rep = self.doctor()
+        sudo_fails = [t for t in self.texts(rep, "fail") if "sudo" in t.lower()]
+        self.assertEqual(len(sudo_fails), 1, sudo_fails)
+        self.assertFailMentions(rep, "sudoers file is missing", "install")
+
+    def test_missing_config_directory_says_install_and_skips_the_key_check(self):
+        os.unlink(self.world.real(wh.AUTHORIZED_KEYS_PATH))
+        os.rmdir(self.world.real(wh.CONFIG_DIR))
+        rep = self.doctor()
+        self.assertFailMentions(rep, "config directory is missing", "install")
+        self.assertNotIn("authorized_keys", "\n".join(self.texts(rep, "warn")))
+
+    def test_end_to_end_is_skipped_not_failed_when_the_account_is_missing(self):
+        self.world.pw = None
+        rep = self.doctor()
+        self.assertIn("skipped", "\n".join(self.texts(rep, "info")))
+        self.assertNotIn("calling the helper", "\n".join(self.texts(rep, "fail")))
+
+
 class AccountTests(DoctorTestCase):
     def test_missing_account(self):
         self.world.pw = None
