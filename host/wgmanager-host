@@ -278,6 +278,10 @@ def split_options(opts):
     return result
 
 
+def install_command(ctx):
+    return "sudo python3 %s install" % shlex.quote(os.path.join(ctx.here, "wgmanager-host"))
+
+
 def secure_path(ctx, rep, path, label, want_dir=False, create_hint=None):
     """Report on a path that must be a real file/dir, root-owned, not writable by
     others. Returns the lstat result when the path exists, else None."""
@@ -471,7 +475,7 @@ def check_account(ctx, rep):
 
 def check_sudo(ctx, rep):
     rep.section("sudo rule")
-    st = secure_path(ctx, rep, SUDOERS_PATH, "sudoers file")
+    st = secure_path(ctx, rep, SUDOERS_PATH, "sudoers file", create_hint=install_command(ctx))
     if st is not None:
         if stat.S_IMODE(st.st_mode) & 0o037:
             rep.fail("sudoers file mode should be 0440 (%s)" % describe_owner(st),
@@ -489,7 +493,9 @@ def check_sudo(ctx, rep):
 
     code, out, err = ctx.run(["sudo", "-n", "-l", "-U", ACCOUNT])
     text = out + err
-    if code != 0 or "not allowed to run sudo" in text:
+    if st is None:
+        pass          # already reported as missing; a second failure would only repeat it
+    elif code != 0 or "not allowed to run sudo" in text:
         rep.fail("%s is not allowed to run any sudo command, so the helper cannot be reached" % ACCOUNT)
     else:
         lines = text.splitlines()
@@ -526,7 +532,7 @@ def check_sudo(ctx, rep):
 
 def check_sshd(ctx, rep):
     rep.section("sshd")
-    secure_path(ctx, rep, SSHD_DROPIN_PATH, "sshd drop-in")
+    dropin_st = secure_path(ctx, rep, SSHD_DROPIN_PATH, "sshd drop-in", create_hint=install_command(ctx))
     mine = read_bytes(ctx.template("ssh", "sshd_config.d", "wgmanager.conf"))
     if mine is not None and os.path.exists(ctx.p(SSHD_DROPIN_PATH)) \
             and read_bytes(ctx.p(SSHD_DROPIN_PATH)) != mine:
@@ -545,7 +551,9 @@ def check_sshd(ctx, rep):
                  % ((err.strip().splitlines() or ["sshd -T failed"])[0]))
         return
 
-    if not eff.get("forcecommand") or eff["forcecommand"][0] in ("none", ""):
+    if dropin_st is None:
+        pass          # the drop-in file is missing (reported above); nothing to compare yet
+    elif not eff.get("forcecommand") or eff["forcecommand"][0] in ("none", ""):
         rep.fail("sshd is not applying the wgmanager drop-in to user %s" % ACCOUNT,
                  ["make sure /etc/ssh/sshd_config contains: Include /etc/ssh/sshd_config.d/*.conf",
                   "then: sudo sshd -t && sudo systemctl reload ssh"])
@@ -600,7 +608,9 @@ def check_sshd(ctx, rep):
 
 def check_authorized_keys(ctx, rep):
     rep.section("Authorized key")
-    secure_path(ctx, rep, CONFIG_DIR, "config directory", want_dir=True)
+    if secure_path(ctx, rep, CONFIG_DIR, "config directory", want_dir=True,
+                   create_hint=install_command(ctx)) is None:
+        return
     if not os.path.lexists(ctx.p(AUTHORIZED_KEYS_PATH)):
         rep.warn("no authorized_keys file yet, so the web app cannot connect",
                  "install the app's public key with: sudo python3 %s install --pubkey-file <file>"
@@ -669,6 +679,14 @@ def call_helper(ctx, request):
 
 def check_end_to_end(ctx, rep):
     rep.section("End to end (as the web app would call it)")
+    try:
+        ctx.getpwnam(ACCOUNT)
+        ready = os.path.exists(ctx.p(HELPER_PATH)) and os.path.exists(ctx.p(SUDOERS_PATH))
+    except KeyError:
+        ready = False
+    if not ready:
+        rep.info("skipped: needs the helper, the sudo rule and the %s account (see above)" % ACCOUNT)
+        return
     code, resp, err = call_helper(ctx, "version")
     if resp is None:
         rep.fail("calling the helper through sudo failed: %s"
@@ -1284,6 +1302,16 @@ def doctor(ctx):
         rep.fail("cannot load wgmanager-helper next to this script (%s)" % exc)
         return rep
     check_pivpn(ctx, rep, h)
+    try:
+        ctx.getpwnam(ACCOUNT)
+        account = True
+    except KeyError:
+        account = False
+    if not account and not any(os.path.lexists(ctx.p(p)) for p in
+                               (HELPER_PATH, SUDOERS_PATH, SSHD_DROPIN_PATH, CONFIG_DIR)):
+        rep.section("wgmanager")
+        rep.fail("the host side of wgmanager is not installed on this host", install_command(ctx))
+        return rep
     check_helper_file(ctx, rep, h)
     check_account(ctx, rep)
     check_sudo(ctx, rep)
