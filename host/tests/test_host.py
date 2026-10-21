@@ -44,7 +44,7 @@ GOOD_KEY = ('command="%s",restrict,from="127.0.0.1,::1,172.29.88.0/29" '
             'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEYFAKEKEYFAKEKEYFAKEKEYFAKEKEYFAKEKEY wgmanager\n'
             % wh.FORCED_COMMAND)
 VERSION_JSON = {"ok": True, "protocol": 1, "data": {
-    "helper_version": "0.1.3", "protocol": 1, "backend": "pivpn", "interface": "wg0",
+    "helper_version": "0.1.4", "protocol": 1, "backend": "pivpn", "interface": "wg0",
     "pivpn_scripts": {}}}
 LIST_JSON = {"ok": True, "protocol": 1, "data": {
     "interface": {"name": "wg0", "up": True},
@@ -457,11 +457,12 @@ class SshdTests(DoctorTestCase):
         self.assertFailMentions(self.doctor(), "forcecommand")
 
     def test_allowusers_without_account_fails(self):
-        self.sshd(GOOD_SSHD + "allowusers alice bob\n")
+        self.sshd(GOOD_SSHD + "allowusers alice\nallowusers bob\n")
         self.assertFailMentions(self.doctor(), "AllowUsers does not include wgweb", "alice bob")
 
     def test_allowusers_with_account_passes(self):
-        self.sshd(GOOD_SSHD + "allowusers alice wgweb\n")
+        # wgweb on the SECOND line: the first-line-only parser got this wrong.
+        self.sshd(GOOD_SSHD + "allowusers alice\nallowusers wgweb\n")
         self.assertClean(self.doctor())
 
     def test_allowusers_wildcard_passes(self):
@@ -612,8 +613,18 @@ class HelperUnitTests(unittest.TestCase):
         self.assertTrue(m(["alice", "wgweb"], "wgweb"))
         self.assertTrue(m(["wg*"], "wgweb"))
         self.assertFalse(m(["alice"], "wgweb"))
-        self.assertFalse(m(["*", "!wgweb"], "wgweb"))
+        # sshd matches Allow/Deny entries one at a time with match_pattern(), where
+        # "!" is an ordinary character (OpenSSH 10.0p2 auth.c/match.c): "*" still
+        # allows wgweb, and "!wgweb" on its own matches nobody.
+        self.assertTrue(m(["*", "!wgweb"], "wgweb"))
+        self.assertFalse(m(["!wgweb"], "wgweb"))
         self.assertTrue(m(["wgweb@10.*"], "wgweb"))
+
+    def test_sshd_list_collects_one_line_per_entry(self):
+        # Real `sshd -T` format for these settings (dump_cfg_strarray).
+        parsed = wh.parse_sshd_t("allowusers alice\nallowusers wgweb\n")
+        self.assertEqual(wh.sshd_list(parsed, "allowusers"), ["alice", "wgweb"])
+        self.assertEqual(wh.sshd_list(parsed, "denyusers"), [])
 
     def test_parse_sshd_t(self):
         parsed = wh.parse_sshd_t("Port 22\nAllowUsers a b\nport 2222\n")

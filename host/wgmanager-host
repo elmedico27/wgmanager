@@ -234,21 +234,29 @@ def parse_sshd_t(text):
     return parsed
 
 
-def ssh_pattern_matches(patterns, value):
-    """OpenSSH-style list: some positive pattern matches and no '!' pattern does.
+def sshd_list(parsed, key):
+    """Every value of an Allow/Deny Users/Groups setting from `sshd -T`.
 
+    sshd prints these ONE LINE PER ENTRY ("allowusers alice", "allowusers bob";
+    dump_cfg_strarray in OpenSSH's servconf.c, verified for 10.0p2), so all lines
+    are collected, not just the first."""
+    return " ".join(parsed.get(key, [])).split()
+
+
+def ssh_pattern_matches(patterns, value):
+    """Does any Allow/Deny entry match `value`, the way sshd judges them?
+
+    sshd checks each entry on its own (allowed_user() in auth.c), so a lone
+    '!pattern' entry can never match anything and does not veto other entries.
     `user@host` entries are judged on the user part only, which errs on the side
     of reporting a match.
     """
-    positive = False
     for pattern in patterns:
-        negated = pattern.startswith("!")
-        pattern = pattern.lstrip("!").split("@", 1)[0]
-        if fnmatch.fnmatchcase(value, pattern):
-            if negated:
-                return False
-            positive = True
-    return positive
+        if pattern.startswith("!"):
+            continue
+        if fnmatch.fnmatchcase(value, pattern.split("@", 1)[0]):
+            return True
+    return False
 
 
 def split_options(opts):
@@ -583,7 +591,7 @@ def check_sshd(ctx, rep):
     groups = groups_out.split() if groups_code == 0 else [ACCOUNT]
     for key, kind in (("allowusers", "user"), ("allowgroups", "group")):
         if eff.get(key):
-            patterns = eff[key][0].split()
+            patterns = sshd_list(eff, key)
             values = [ACCOUNT] if kind == "user" else groups
             if not any(ssh_pattern_matches(patterns, v) for v in values):
                 rep.fail("sshd %s does not include %s (it lists: %s), so it can never log in"
@@ -595,7 +603,7 @@ def check_sshd(ctx, rep):
                 rep.ok("sshd %s allows %s" % (key, ACCOUNT))
     for key, kind in (("denyusers", "user"), ("denygroups", "group")):
         if eff.get(key):
-            patterns = eff[key][0].split()
+            patterns = sshd_list(eff, key)
             values = [ACCOUNT] if kind == "user" else groups
             if any(ssh_pattern_matches(patterns, v) for v in values):
                 rep.fail("sshd %s blocks %s" % (key, ACCOUNT),
@@ -968,12 +976,13 @@ def preflight_install(ctx, h, args):
         for key in ("allowusers", "allowgroups"):
             if parsed.get(key):
                 # The account will get a same-named primary group, so one name covers both.
-                if not ssh_pattern_matches(parsed[key][0].split(), ACCOUNT):
+                if not ssh_pattern_matches(sshd_list(parsed, key), ACCOUNT):
                     raise InstallError("sshd %s is set (%s) and does not include %s, so it could never "
                                        "log in. Add %s to it (or a group matching it), then run install "
-                                       "again" % (SSHD_KEY_NAMES[key], parsed[key][0], ACCOUNT, ACCOUNT))
+                                       "again" % (SSHD_KEY_NAMES[key], " ".join(sshd_list(parsed, key)),
+                                                  ACCOUNT, ACCOUNT))
         for key in ("denyusers",):
-            if parsed.get(key) and ssh_pattern_matches(parsed[key][0].split(), ACCOUNT):
+            if parsed.get(key) and ssh_pattern_matches(sshd_list(parsed, key), ACCOUNT):
                 raise InstallError("sshd DenyUsers blocks %s" % ACCOUNT)
     unit = service_name(ctx)
     if unit is None:

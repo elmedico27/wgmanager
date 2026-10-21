@@ -395,11 +395,11 @@ class PreflightRefusalTests(InstallTestCase):
         self.refused("already invalid")
 
     def test_allowusers_excluding_the_account(self):
-        self.w.extra_sshd = "allowusers alice bob\n"
+        self.w.extra_sshd = "allowusers alice\nallowusers bob\n"
         self.refused("AllowUsers")
 
     def test_allowusers_including_the_account_is_fine(self):
-        self.w.extra_sshd = "allowusers alice wgweb\n"
+        self.w.extra_sshd = "allowusers alice\nallowusers wgweb\n"     # real sshd -T format
         code, out = self.install()
         self.assertEqual(code, 0, out)
 

@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Test double for PiVPN's `pivpn` command (WireGuard, v4.6.x-era behaviour).
 
-It reproduces the quirks the real scripts have, on purpose:
+It reproduces the quirks the real scripts have, on purpose (each one verified
+against PiVPN v4.6.2's removeCONF/enableCONF/disableCONF/makeCONF.sh; the
+v4.6.0-v4.6.2 WireGuard scripts differ only by 3 lines in makeCONF.sh):
   * `remove` / `on` / `off` for an unknown client print "does not exist" and exit 0;
   * `off` on an already-disabled client does nothing and does not reload;
-  * a failed service reload is not an error (exit 0) -- simulated by ctl/fail_reload.
+  * a failed service reload is not an error (exit 0) -- simulated by ctl/fail_reload;
+  * `on` reloads even when nothing changed;
+  * `add -n NAME` never reads stdin once a name is given, and applies the same
+    name rules as PiVPN's checkName() (including "configs/NAME.conf exists").
 ctl/hang hangs; ctl/hang_child hangs after starting a child that writes ../late_write
 1.5 s later (to prove the helper kills the whole process group on timeout).
 

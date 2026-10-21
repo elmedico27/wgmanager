@@ -28,7 +28,7 @@ import sys
 import syslog
 import time
 
-HELPER_VERSION = "0.1.3"
+HELPER_VERSION = "0.1.4"
 PROTOCOL = 1
 BACKEND = "pivpn"
 
@@ -376,14 +376,23 @@ def preflight_problems(settings):
 
 
 def _scripts_problems(settings):
-    """`pivpn` runs the *.sh scripts in PIVPN_SCRIPTS_DIR as root, so they and
-    their directory must be as trustworthy as the helper itself. Only what is
-    present is judged; the helper never needs any particular script to exist."""
+    """`pivpn` runs the *.sh scripts in PIVPN_SCRIPTS_DIR as root, and those
+    scripts source shared ones one level up (e.g. /opt/pivpn/ipaddr_utils.sh;
+    verified in PiVPN v4.6.2). Both directories and their *.sh files must be as
+    trustworthy as the helper itself. Only what is present is judged."""
     directory = settings.pivpn_scripts_dir
+    problems = _script_dir_problems(directory, settings, required=True)
+    parent = os.path.dirname(directory.rstrip("/"))
+    if parent and parent != "/":
+        problems += _script_dir_problems(parent, settings, required=False)
+    return problems
+
+
+def _script_dir_problems(directory, settings, required):
     try:
         st = os.stat(directory)
     except OSError:
-        return [("PiVPN scripts directory", directory, "missing")]
+        return [("PiVPN scripts directory", directory, "missing")] if required else []
     if mode_unsafe(st):
         return [("PiVPN scripts directory", directory, "writable")]
     if settings.enforce_owner and st.st_uid != 0:
@@ -392,7 +401,7 @@ def _scripts_problems(settings):
     try:
         names = sorted(os.listdir(directory))
     except OSError:
-        return [("PiVPN scripts directory", directory, "missing")]
+        return [("PiVPN scripts directory", directory, "missing")] if required else []
     for name in names:
         if name.endswith(".sh"):
             path = os.path.join(directory, name)
@@ -422,8 +431,8 @@ def preflight(settings):
 def read_vpn_subnet(settings):
     """The IPv4 client subnet from PiVPN's setupVars (pivpnNET + subnetClass).
 
-    PiVPN's installer writes `pivpnNET`; `pivNET` is accepted as a fallback in
-    case another PiVPN version spells it that way.
+    Key names verified against PiVPN's install.sh/makeCONF.sh (v4.6.2) and a
+    real setupVars.conf.
 
     Returns an ipaddress.IPv4Network, or None when it cannot be determined (the
     caller then skips the address check and says so).
@@ -437,9 +446,9 @@ def read_vpn_subnet(settings):
         key, sep, value = raw.strip().partition("=")
         if sep:
             values[key.strip()] = value.strip().strip("\"'")
-    network = values.get("pivpnNET") or values.get("pivNET")
     try:
-        return ipaddress.IPv4Network("%s/%s" % (network, values["subnetClass"]), strict=True)
+        return ipaddress.IPv4Network("%s/%s" % (values["pivpnNET"], values["subnetClass"]),
+                                     strict=True)
     except (KeyError, ValueError):
         return None
 
