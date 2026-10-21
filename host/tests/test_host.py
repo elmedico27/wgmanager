@@ -44,7 +44,7 @@ GOOD_KEY = ('command="%s",restrict,from="127.0.0.1,::1,172.29.88.0/29" '
             'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEYFAKEKEYFAKEKEYFAKEKEYFAKEKEYFAKEKEY wgmanager\n'
             % wh.FORCED_COMMAND)
 VERSION_JSON = {"ok": True, "protocol": 1, "data": {
-    "helper_version": "0.1.2", "protocol": 1, "backend": "pivpn", "interface": "wg0",
+    "helper_version": "0.1.3", "protocol": 1, "backend": "pivpn", "interface": "wg0",
     "pivpn_scripts": {}}}
 LIST_JSON = {"ok": True, "protocol": 1, "data": {
     "interface": {"name": "wg0", "up": True},
@@ -106,7 +106,7 @@ class World:
         os.symlink(os.path.join(self.pv, "pivpn-real/wg"), os.path.join(self.pv, "bin/wg"))
         self.raw_write(os.path.join(self.pv, "wg/wg0.conf"), "[Interface]\n")
         self.raw_write(os.path.join(self.pv, "wg/configs/clients.txt"), "")
-        self.raw_write(os.path.join(self.pv, "setupVars.conf"), "pivNET=10.0.0.0\nsubnetClass=24\n")
+        self.raw_write(os.path.join(self.pv, "setupVars.conf"), "pivpnNET=10.0.0.0\nsubnetClass=24\n")
         self.ctx = wh.Host(root=self.root, expected_uid=os.getuid(), runner=self.run,
                            getpwnam=self.getpwnam, euid=0, settings_loader=self.load_settings)
 

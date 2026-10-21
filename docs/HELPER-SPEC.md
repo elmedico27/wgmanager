@@ -1,9 +1,9 @@
 # wgmanager host helper: specification
 
-**Status:** helper 0.1.2 implemented in `host/wgmanager-helper` with unit tests
+**Status:** helper 0.1.3 implemented in `host/wgmanager-helper` with unit tests
 (`host/tests/`), all passing against stub `pivpn`/`wg`. 0.1.1 was verified on a
-real host (section 14 records what was checked); 0.1.2 adds the fixes listed in
-section 17. `host/wgmanager-host doctor` reuses
+real host (section 14 records what was checked); 0.1.2 and 0.1.3 add the fixes
+listed in section 17. `host/wgmanager-host doctor` reuses
 the helper's preflight checks (section 10) and is covered by its own tests.
 **Scope:** the host-side, root-privileged component only. The web app, UI and
 container are specified separately and must treat this document as the contract.
@@ -196,7 +196,7 @@ host is otherwise misconfigured. `pivpn_scripts` is diagnostic only (`null` for 
 unreadable script); it is never enforced.
 
 ```json
-{"helper_version": "0.1.2", "protocol": 1, "backend": "pivpn", "interface": "wg0",
+{"helper_version": "0.1.3", "protocol": 1, "backend": "pivpn", "interface": "wg0",
  "pivpn_scripts": {"makeCONF.sh": "<sha256>", "removeCONF.sh": "<sha256>",
                    "enableCONF.sh": "<sha256>", "disableCONF.sh": "<sha256>"}}
 ```
@@ -289,7 +289,8 @@ a client config 8 KiB).
   non-UTF-8 byte or a Windows line ending spoils only its own line. `address` is
   the decimal field converted to dotted form.
 - **VPN subnet check:** the subnet is read from PiVPN's `setupVars.conf`
-  (`pivNET` and `subnetClass`, quotes allowed). A client whose address is outside
+  (`pivpnNET` and `subnetClass`, quotes allowed; `pivNET` is accepted as a
+  fallback spelling). A client whose address is outside
   it is **listed but marked `manageable: false`**, with a warning. Hiding a real
   peer would be worse than greying it out. If the subnet cannot be read, the check
   is skipped and a warning says so.
@@ -544,3 +545,9 @@ handling beyond what PiVPN does itself, editing any config, a native
 - File checks are repeated on the opened file descriptor, and PiVPN's `*.sh`
   scripts are vetted (section 10).
 - A non-UTF-8 byte or CRLF in `clients.txt` spoils one line, not the whole list.
+
+## 18. Changes in 0.1.3
+
+- The VPN subnet is read from `pivpnNET`, the key PiVPN actually writes (0.1.2
+  looked only for `pivNET`, so on a real install the subnet check was always
+  skipped with a warning). `pivNET` remains a fallback.

@@ -51,7 +51,7 @@ class Env:
                    "Address = 10.0.0.1/24\nListenPort = 51820\n")
         self.write("wg/configs/clients.txt", "")
         self.write("wg/live.txt", "")
-        self.write("setupVars.conf", "pivNET=10.0.0.0\nsubnetClass=24\n")
+        self.write("setupVars.conf", "pivpnNET=10.0.0.0\nsubnetClass=24\n")
         for name in DIAG_SCRIPTS:
             self.write("scripts/" + name, "#!/bin/bash\n# " + name + "\n")
 
@@ -338,8 +338,21 @@ class ListTests(HelperTestCase):
         self.assertTrue(data["clients"][0]["manageable"])
         self.assertIn("could not read the VPN subnet", " | ".join(data["warnings"]))
 
+    def test_older_pivnet_spelling_is_accepted(self):
+        self.env.write("setupVars.conf", "pivNET=10.0.0.0\nsubnetClass=24\n")
+        self.env.seed("Alpha")
+        self.assertEqual(self.ok("list")["warnings"], [])
+
+    def test_setupvars_layout_as_pivpn_writes_it(self):
+        # Key names as found in a real PiVPN WireGuard install (values made up).
+        self.env.write("setupVars.conf", "PLAT=Debian\nIPv4dev=eth0\ninstall_user=alice\n"
+                       "VPN=wireguard\npivpnPORT=51820\npivpnDEV=wg0\npivpnNET=10.0.0.0\n"
+                       "subnetClass=24\npivpnenableipv6=0\n")
+        self.env.seed("Alpha")
+        self.assertEqual(self.ok("list")["warnings"], [])
+
     def test_quoted_setupvars_values(self):
-        self.env.write("setupVars.conf", 'pivNET="10.0.0.0"\nsubnetClass=\'24\'\n')
+        self.env.write("setupVars.conf", 'pivpnNET="10.0.0.0"\nsubnetClass=\'24\'\n')
         self.env.seed("Alpha")
         self.assertEqual(self.ok("list")["warnings"], [])
 
