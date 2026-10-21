@@ -1,9 +1,9 @@
 # wgmanager host helper: specification
 
-**Status:** helper 0.1.3 implemented in `host/wgmanager-helper` with unit tests
+**Status:** helper 0.1.4 implemented in `host/wgmanager-helper` with unit tests
 (`host/tests/`), all passing against stub `pivpn`/`wg`. 0.1.1 was verified on a
-real host (section 14 records what was checked); 0.1.2 and 0.1.3 add the fixes
-listed in section 17. `host/wgmanager-host doctor` reuses
+real host (section 14 records what was checked); 0.1.2 to 0.1.4 add the fixes
+listed in sections 17 and 18. `host/wgmanager-host doctor` reuses
 the helper's preflight checks (section 10) and is covered by its own tests.
 **Scope:** the host-side, root-privileged component only. The web app, UI and
 container are specified separately and must treat this document as the contract.
@@ -196,7 +196,7 @@ host is otherwise misconfigured. `pivpn_scripts` is diagnostic only (`null` for 
 unreadable script); it is never enforced.
 
 ```json
-{"helper_version": "0.1.3", "protocol": 1, "backend": "pivpn", "interface": "wg0",
+{"helper_version": "0.1.4", "protocol": 1, "backend": "pivpn", "interface": "wg0",
  "pivpn_scripts": {"makeCONF.sh": "<sha256>", "removeCONF.sh": "<sha256>",
                    "enableCONF.sh": "<sha256>", "disableCONF.sh": "<sha256>"}}
 ```
@@ -289,8 +289,8 @@ a client config 8 KiB).
   non-UTF-8 byte or a Windows line ending spoils only its own line. `address` is
   the decimal field converted to dotted form.
 - **VPN subnet check:** the subnet is read from PiVPN's `setupVars.conf`
-  (`pivpnNET` and `subnetClass`, quotes allowed; `pivNET` is accepted as a
-  fallback spelling). A client whose address is outside
+  (`pivpnNET` and `subnetClass`, quotes allowed; key names verified against
+  PiVPN's own scripts and a real install). A client whose address is outside
   it is **listed but marked `manageable: false`**, with a warning. Hiding a real
   peer would be worse than greying it out. If the subnet cannot be read, the check
   is skipped and a warning says so.
@@ -431,8 +431,10 @@ Fail with exit 6 `host_misconfigured` (fixed message; detail to the journal) unl
   when they are read, so a file swapped in after the first check is still
   refused. The settings file is checked the same way;
 - `PIVPN_SCRIPTS_DIR` exists, and it and every `*.sh` in it are root-owned and
-  not group- or world-writable: `pivpn` runs those scripts as root. Only what is
-  present is judged.
+  not group- or world-writable: `pivpn` runs those scripts as root. The same
+  applies to the directory one level up and its `*.sh` files, because the
+  scripts source shared ones from there (`/opt/pivpn/ipaddr_utils.sh`). Only
+  what is present is judged.
 
 Note: PiVPN creates its files mode 644 and `configs/` 755, so private keys are
 readable by any local user. That is a host
@@ -501,7 +503,10 @@ today on the host regardless of wgmanager.
 
 ## 14. Verified on a real host
 
-Checked with helper 0.1.1 on a Debian host running v4.6.x-era PiVPN scripts:
+Checked with helper 0.1.1 (and 0.1.2/0.1.3 for `doctor`, `install` and the
+setupVars layout) on Debian 13 with PiVPN's WireGuard scripts at v4.6.2
+(identified by the `version` hashes; v4.7.0 ships the same four scripts),
+wireguard-tools v1.0.20210914, OpenSSH 10.0p2, sudo 1.9.16p2, Python 3.13:
 
 1. `Defaults!command env_keep` passes `SSH_ORIGINAL_COMMAND` through sudo.
 2. sshd uses the configured `ForceCommand` when `command=` is also present, and
@@ -514,12 +519,23 @@ Checked with helper 0.1.1 on a Debian host running v4.6.x-era PiVPN scripts:
 6. `pivpn add -n NAME` with empty stdin completes without prompting.
 7. `wgmanager-host install`, `doctor`, `uninstall` and reinstall all ran clean.
 
+Verified from source, not run:
+
+- PiVPN's quirks reproduced by the test double (exit 0 for an unknown client and
+  for a failed reload, `off` not reloading when already disabled, `add -n` name
+  rules): `removeCONF`/`enableCONF`/`disableCONF`/`makeCONF.sh` at v4.6.2.
+  `remove`/`on`/`off` are unchanged up to v4.11.1.
+- Empty-stdin `pivpn add -n NAME` on current scripts (v4.11.1): the client-IP
+  prompt reads EOF, the address is allocated automatically, and nothing aborts
+  (no `set -e`).
+- `sshd -T` prints `AllowUsers`/`DenyUsers`/`AllowGroups`/`DenyGroups` one line
+  per entry, and sshd matches each entry on its own with `*`/`?` wildcards only
+  (OpenSSH 10.0p2 `servconf.c`, `auth.c`, `match.c`).
+
 Still to check:
 
 - The source address sshd sees from the container matches the `from=` subnet
   (once the container exists).
-- Empty-stdin `pivpn add` on **current** PiVPN scripts (only the v4.6.x-era ones
-  have been run).
 
 ## 15. Decisions taken during review
 
@@ -546,8 +562,14 @@ handling beyond what PiVPN does itself, editing any config, a native
   scripts are vetted (section 10).
 - A non-UTF-8 byte or CRLF in `clients.txt` spoils one line, not the whole list.
 
-## 18. Changes in 0.1.3
+## 18. Changes in 0.1.3 and 0.1.4
 
 - The VPN subnet is read from `pivpnNET`, the key PiVPN actually writes (0.1.2
-  looked only for `pivNET`, so on a real install the subnet check was always
-  skipped with a warning). `pivNET` remains a fallback.
+  looked for `pivNET`, which no PiVPN version has used, so the subnet check
+  was always skipped with a warning).
+- 0.1.4: script vetting also covers the parent of `PIVPN_SCRIPTS_DIR`, whose
+  shared scripts the WireGuard scripts source as root.
+- `wgmanager-host` (not the helper): `AllowUsers`/`DenyUsers`/`AllowGroups`/
+  `DenyGroups` are read from every `sshd -T` line, not just the first, and
+  matched entry by entry as sshd does. Before, `AllowUsers alice wgweb` made
+  doctor report wgweb as locked out and install refuse to run.

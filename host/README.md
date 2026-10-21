@@ -86,6 +86,15 @@ to continue if `/etc/ssh/sshd_config` does not include `sshd_config.d`, if sshd'
 `AllowUsers`/`AllowGroups` would lock `wgweb` out, or if PiVPN's files or scripts
 are writable by non-root users.
 
+## Tested with
+
+Debian 13, PiVPN's WireGuard scripts at v4.6.2 (v4.7.0 ships the same
+`removeCONF`/`enableCONF`/`disableCONF`/`makeCONF.sh`), wireguard-tools
+v1.0.20210914, OpenSSH 10.0p2, sudo 1.9.16p2 and Python 3.13. Current PiVPN
+(v4.11.1) differs only in `makeCONF.sh`; the helper's use of it was checked
+against that script's source but has not been run. `wgmanager-helper version`
+reports hashes of the scripts on your host for comparison.
+
 ## Tests
 
     python3 -m unittest discover -s host/tests -v

@@ -395,11 +395,11 @@ class PreflightRefusalTests(InstallTestCase):
         self.refused("already invalid")
 
     def test_allowusers_excluding_the_account(self):
-        self.w.extra_sshd = "allowusers alice bob\n"
+        self.w.extra_sshd = "allowusers alice\nallowusers bob\n"
         self.refused("AllowUsers")
 
     def test_allowusers_including_the_account_is_fine(self):
-        self.w.extra_sshd = "allowusers alice wgweb\n"
+        self.w.extra_sshd = "allowusers alice\nallowusers wgweb\n"     # real sshd -T format
         code, out = self.install()
         self.assertEqual(code, 0, out)
 
@@ -617,7 +617,7 @@ class UninstallTests(InstallTestCase):
         self.install()
         backups = os.path.join(self.w.pv, "backups")
         os.mkdir(backups, 0o700)
-        name = "20261020T220622861Z-add-Zz_Test.clients.txt"
+        name = "20260101T120000000Z-add-Bob_Phone.clients.txt"
         with open(os.path.join(backups, name), "w") as handle:
             handle.write("x")
         with open(os.path.join(backups, "keep-me.txt"), "w") as handle:
@@ -631,7 +631,7 @@ class UninstallTests(InstallTestCase):
         self.install()
         backups = os.path.join(self.w.pv, "backups")
         os.mkdir(backups, 0o700)
-        ours = "20261020T220622861Z-add-Zz_Test.clients.txt"
+        ours = "20260101T120000000Z-add-Bob_Phone.clients.txt"
         for name in (ours, "keep-me.txt"):
             with open(os.path.join(backups, name), "w") as handle:
                 handle.write("x")

@@ -338,11 +338,6 @@ class ListTests(HelperTestCase):
         self.assertTrue(data["clients"][0]["manageable"])
         self.assertIn("could not read the VPN subnet", " | ".join(data["warnings"]))
 
-    def test_older_pivnet_spelling_is_accepted(self):
-        self.env.write("setupVars.conf", "pivNET=10.0.0.0\nsubnetClass=24\n")
-        self.env.seed("Alpha")
-        self.assertEqual(self.ok("list")["warnings"], [])
-
     def test_setupvars_layout_as_pivpn_writes_it(self):
         # Key names as found in a real PiVPN WireGuard install (values made up).
         self.env.write("setupVars.conf", "PLAT=Debian\nIPv4dev=eth0\ninstall_user=alice\n"
@@ -674,6 +669,19 @@ class PreflightTests(HelperTestCase):
         self.env.write("scripts/notes.txt", "x")
         os.chmod(self.env.p("scripts/notes.txt"), 0o666)
         self.ok("list")
+
+    def test_writable_shared_script_one_level_up_refused(self):
+        # PiVPN's scripts source /opt/pivpn/ipaddr_utils.sh, one level above
+        # PIVPN_SCRIPTS_DIR (/opt/pivpn/wireguard).
+        nested = self.env.p("opt/pivpn/wireguard")
+        os.makedirs(nested)
+        self.env.write("opt/pivpn/ipaddr_utils.sh", "#!/bin/bash\n")
+        self.ok("list", PIVPN_SCRIPTS_DIR=nested)
+        os.chmod(self.env.p("opt/pivpn/ipaddr_utils.sh"), 0o666)
+        self.err("list", "host_misconfigured", 6, PIVPN_SCRIPTS_DIR=nested)
+        os.chmod(self.env.p("opt/pivpn/ipaddr_utils.sh"), 0o644)
+        os.chmod(self.env.p("opt/pivpn"), 0o777)
+        self.err("list", "host_misconfigured", 6, PIVPN_SCRIPTS_DIR=nested)
 
     def test_missing_scripts_directory_refused(self):
         shutil.rmtree(self.env.p("scripts"))
