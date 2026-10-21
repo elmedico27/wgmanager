@@ -21,13 +21,14 @@ import ipaddress
 import json
 import os
 import re
+import signal
 import stat
 import subprocess
 import sys
 import syslog
 import time
 
-HELPER_VERSION = "0.1.1"
+HELPER_VERSION = "0.1.2"
 PROTOCOL = 1
 BACKEND = "pivpn"
 
@@ -38,6 +39,7 @@ MAX_CLIENTS_TXT = 1024 * 1024
 MAX_SERVER_CONF = 1024 * 1024
 MAX_CLIENT_CONF = 8 * 1024
 MAX_SETTINGS_FILE = 8 * 1024
+MAX_SETUPVARS = 64 * 1024
 
 LOCK_TIMEOUT = 10.0      # seconds to wait for the mutation lock
 BACKEND_TIMEOUT = 30     # seconds for one pivpn call
@@ -56,6 +58,8 @@ DIGITS_ONLY_RE = re.compile(r"[0-9]+")
 LISTED_NAME_RE = re.compile(r"[A-Za-z0-9._@-]{1,64}")
 PUBKEY_RE = re.compile(r"[A-Za-z0-9+/]{43}=")
 NUMBER_RE = re.compile(r"[0-9]{1,12}")
+# Handshake times and byte counters from `wg show dump` are 64-bit: up to 20 digits.
+COUNTER_RE = re.compile(r"[0-9]{1,20}")
 IFACE_RE = re.compile(r"[A-Za-z0-9_-]{1,15}")
 BACKUP_FILE_RE = re.compile(
     r"([0-9]{8}T[0-9]{9}Z-[a-z-]+-[A-Za-z0-9_-]+)\.[A-Za-z0-9_-]+(?:\.conf|\.txt)")
@@ -129,6 +133,13 @@ def log(level, message):
 
 # --- settings ----------------------------------------------------------------
 
+class _OwnerPolicy:
+    """The one attribute read_text() needs, before a Settings object exists."""
+
+    def __init__(self, enforce_owner):
+        self.enforce_owner = enforce_owner
+
+
 class Settings:
     def __init__(self, values, enforce_owner):
         self.interface = values["WG_INTERFACE"]
@@ -163,17 +174,26 @@ def mode_unsafe(st):
     return bool(st.st_mode & 0o022)
 
 
-def read_text(path, cap):
-    """Read a regular file (never following a final symlink), capped, as UTF-8."""
+def read_text(path, cap, settings=None, errors="strict"):
+    """Read a regular file (never following a final symlink), capped, as UTF-8.
+
+    With `settings`, the file actually opened must also be root-owned (when
+    owners are enforced) and not group/world-writable. Checking the open file
+    descriptor, not the path, means a file swapped in after an earlier check
+    is still refused.
+    """
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     with os.fdopen(fd, "rb") as handle:
         st = os.fstat(handle.fileno())
         if not stat.S_ISREG(st.st_mode):
             raise ValueError("not a regular file")
+        if settings is not None and (
+                mode_unsafe(st) or (settings.enforce_owner and st.st_uid != 0)):
+            raise ValueError("unsafe mode or owner")
         data = handle.read(cap + 1)
     if len(data) > cap:
         raise ValueError("file too large")
-    return data.decode("utf-8", "strict")
+    return data.decode("utf-8", errors)
 
 
 def load_settings(config_path, enforce_owner):
@@ -191,8 +211,10 @@ def load_settings(config_path, enforce_owner):
             log(syslog.LOG_ERR, "config file has unsafe type, mode or owner")
             raise HelperError("host_misconfigured")
         try:
-            text = read_text(config_path, MAX_SETTINGS_FILE)
+            text = read_text(config_path, MAX_SETTINGS_FILE,
+                             _OwnerPolicy(enforce_owner))
         except (OSError, ValueError):
+            log(syslog.LOG_ERR, "config file could not be read safely")
             raise HelperError("host_misconfigured")
         for raw in text.split("\n"):
             line = raw.strip()
@@ -246,14 +268,40 @@ def parse_request(request):
 # --- subprocess --------------------------------------------------------------
 
 def run(argv, timeout):
-    """Run a fixed argument list. No shell, no stdin, minimal environment."""
+    """Run a fixed argument list. No shell, no stdin, minimal environment.
+
+    The child gets its own process group. `pivpn` is a shell script that starts
+    further scripts; on timeout the WHOLE group is killed, so nothing it started
+    can keep editing WireGuard's files after the helper reports back and
+    releases the lock.
+    """
+    proc = subprocess.Popen(
+        argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, env=SAFE_ENV, cwd="/", shell=False,
+        start_new_session=True)
     try:
-        return subprocess.run(
-            argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, env=SAFE_ENV, cwd="/", timeout=timeout,
-            shell=False, check=False)
+        out, err = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
+        kill_group(proc)
         raise BackendTimeout()
+    return subprocess.CompletedProcess(argv, proc.returncode, out, err)
+
+
+def kill_group(proc):
+    """Kill a child started with start_new_session=True and everything in its group."""
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except OSError:
+        pass
+    proc.kill()
+    try:
+        # Bounded: a descendant that left the group could hold the pipes open.
+        proc.communicate(timeout=5)
+    except subprocess.TimeoutExpired:
+        for stream in (proc.stdout, proc.stderr):
+            if stream is not None:
+                stream.close()
+        proc.wait()
 
 
 # --- preflight ---------------------------------------------------------------
@@ -323,6 +371,41 @@ def preflight_problems(settings):
             problems.append((what,) + problem)
         else:
             setattr(settings, attr, real)
+    problems.extend(_scripts_problems(settings))
+    return problems
+
+
+def _scripts_problems(settings):
+    """`pivpn` runs the *.sh scripts in PIVPN_SCRIPTS_DIR as root, so they and
+    their directory must be as trustworthy as the helper itself. Only what is
+    present is judged; the helper never needs any particular script to exist."""
+    directory = settings.pivpn_scripts_dir
+    try:
+        st = os.stat(directory)
+    except OSError:
+        return [("PiVPN scripts directory", directory, "missing")]
+    if mode_unsafe(st):
+        return [("PiVPN scripts directory", directory, "writable")]
+    if settings.enforce_owner and st.st_uid != 0:
+        return [("PiVPN scripts directory", directory, "not_root")]
+    problems = []
+    try:
+        names = sorted(os.listdir(directory))
+    except OSError:
+        return [("PiVPN scripts directory", directory, "missing")]
+    for name in names:
+        if name.endswith(".sh"):
+            path = os.path.join(directory, name)
+            try:
+                target = os.stat(path)          # what actually runs, links followed
+            except OSError:
+                continue                        # a dangling link cannot be run
+            if not stat.S_ISREG(target.st_mode):
+                continue
+            if mode_unsafe(target):
+                problems.append(("PiVPN script", path, "writable"))
+            elif settings.enforce_owner and target.st_uid != 0:
+                problems.append(("PiVPN script", path, "not_root"))
     return problems
 
 
@@ -336,10 +419,37 @@ def preflight(settings):
 
 # --- reading state -----------------------------------------------------------
 
-def parse_clients(text):
-    """Parse clients.txt: `name public_key created_epoch address_decimal`."""
+def read_vpn_subnet(settings):
+    """The IPv4 client subnet from PiVPN's setupVars (pivNET + subnetClass).
+
+    Returns an ipaddress.IPv4Network, or None when it cannot be determined (the
+    caller then skips the address check and says so).
+    """
+    try:
+        text = read_text(settings.pivpn_setupvars, MAX_SETUPVARS, settings, "replace")
+    except (OSError, ValueError):
+        return None
+    values = {}
+    for raw in text.split("\n"):
+        key, sep, value = raw.strip().partition("=")
+        if sep:
+            values[key.strip()] = value.strip().strip("\"'")
+    try:
+        return ipaddress.IPv4Network("%s/%s" % (values["pivNET"], values["subnetClass"]),
+                                     strict=True)
+    except (KeyError, ValueError):
+        return None
+
+
+def parse_clients(text, subnet=None):
+    """Parse clients.txt: `name public_key created_epoch address_decimal`.
+
+    A client whose address is outside `subnet` is still listed (hiding a real
+    peer would be worse) but marked unmanageable, with a warning.
+    """
     clients, warnings, seen = [], [], set()
     for number, line in enumerate(text.split("\n"), 1):
+        line = line.rstrip("\r")
         if line.strip() == "":
             continue
         parts = line.split(" ")
@@ -361,12 +471,16 @@ def parse_clients(text):
             warnings.append("clients.txt line %d: duplicate name skipped" % number)
             continue
         seen.add(parts[0])
+        inside = subnet is None or ipaddress.IPv4Address(address) in subnet
+        if not inside:
+            warnings.append("%s: address %s is outside the VPN subnet %s; listed but "
+                            "not manageable" % (parts[0], address, subnet))
         clients.append({
             "name": parts[0],
             "public_key": parts[1],
             "created_at": int(parts[2]),
             "address": address,
-            "manageable": is_safe_name(parts[0]),
+            "manageable": is_safe_name(parts[0]) and inside,
         })
     return clients, warnings
 
@@ -416,8 +530,8 @@ def read_live(settings):
         cols = line.split("\t")
         if len(cols) < 8 or not PUBKEY_RE.fullmatch(cols[0]):
             continue
-        if not (NUMBER_RE.fullmatch(cols[4]) and NUMBER_RE.fullmatch(cols[5])
-                and NUMBER_RE.fullmatch(cols[6])):
+        if not (COUNTER_RE.fullmatch(cols[4]) and COUNTER_RE.fullmatch(cols[5])
+                and COUNTER_RE.fullmatch(cols[6])):
             continue
         handshake = int(cols[4])
         result["peers"][cols[0]] = {
@@ -431,11 +545,16 @@ def read_live(settings):
 
 def snapshot(settings):
     try:
-        clients_text = read_text(settings.clients_txt, MAX_CLIENTS_TXT)
-        conf_text = read_text(settings.server_conf, MAX_SERVER_CONF)
+        # A stray non-UTF-8 byte spoils one line (reported as malformed), not the list.
+        clients_text = read_text(settings.clients_txt, MAX_CLIENTS_TXT, settings, "replace")
+        conf_text = read_text(settings.server_conf, MAX_SERVER_CONF, settings, "replace")
     except (OSError, ValueError):
         raise HelperError("host_misconfigured")
-    clients, warnings = parse_clients(clients_text)
+    subnet = read_vpn_subnet(settings)
+    clients, warnings = parse_clients(clients_text, subnet)
+    if subnet is None:
+        warnings.append("could not read the VPN subnet from PiVPN's setupVars "
+                        "(pivNET, subnetClass); client addresses were not checked")
     return {
         "clients": clients,
         "by_name": {c["name"]: c for c in clients},
@@ -487,6 +606,10 @@ def find_client(snap, name):
     client = snap["by_name"].get(name)
     if client is None:
         raise HelperError("not_found")
+    if not client["manageable"]:
+        # e.g. an address outside the VPN subnet: listed, but no action may touch it
+        # (the same answer an unsafe name gets from the request grammar).
+        raise HelperError("invalid_request")
     return client
 
 

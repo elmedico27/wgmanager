@@ -51,7 +51,7 @@ class Env:
                    "Address = 10.0.0.1/24\nListenPort = 51820\n")
         self.write("wg/configs/clients.txt", "")
         self.write("wg/live.txt", "")
-        self.write("setupVars.conf", "")
+        self.write("setupVars.conf", "pivNET=10.0.0.0\nsubnetClass=24\n")
         for name in DIAG_SCRIPTS:
             self.write("scripts/" + name, "#!/bin/bash\n# " + name + "\n")
 
@@ -271,6 +271,23 @@ class ListTests(HelperTestCase):
         self.assertIsNone(c["endpoint"])
         self.assertIsNone(c["latest_handshake"])
 
+    def test_large_transfer_counters(self):
+        # A peer with more than 12 digits of traffic used to vanish from the
+        # live list, which also blinded the post-change checks.
+        self.env.seed("Alpha")
+        self.env.switch("big_counters")
+        c = self.ok("list")["clients"][0]
+        self.assertTrue(c["live"])
+        self.assertEqual(c["transfer_rx"], 1500000000000)
+        self.assertEqual(c["transfer_tx"], 18446744073709551615)
+
+    def test_disable_is_verified_for_a_heavy_peer(self):
+        self.env.seed("Alpha")
+        self.env.switch("big_counters")
+        self.env.switch("fail_reload")          # peer stays on the interface
+        e = self.err("disable Alpha", "backend_failed", 5)
+        self.assertIn("live_peer", e["failed_checks"])
+
     def test_interface_down(self):
         self.env.seed("Alpha")
         self.env.switch("iface_down")
@@ -284,9 +301,9 @@ class ListTests(HelperTestCase):
         self.env.seed("Alpha")
         with open(self.env.p("wg/configs/clients.txt"), "a") as handle:
             handle.write("garbage line\n")
-            handle.write("a.b %s 1700000000 180410200\n" % ("A" * 43 + "="))
-            handle.write("Alpha %s 1700000000 180410201\n" % ("B" * 43 + "="))
-            handle.write("Bad %s notanumber 180410202\n" % ("C" * 43 + "="))
+            handle.write("a.b %s 1700000000 167772360\n" % ("A" * 43 + "="))
+            handle.write("Alpha %s 1700000000 167772361\n" % ("B" * 43 + "="))
+            handle.write("Bad %s notanumber 167772362\n" % ("C" * 43 + "="))
         data = self.ok("list")
         names = [c["name"] for c in data["clients"]]
         self.assertEqual(names, ["Alpha", "a.b"])
@@ -298,9 +315,48 @@ class ListTests(HelperTestCase):
         self.assertIn("duplicate name skipped", warnings)
         self.assertIn("a.b: no marker block", warnings)
 
+    def test_client_outside_vpn_subnet_is_listed_but_not_manageable(self):
+        self.env.seed("Alpha")
+        with open(self.env.p("wg/configs/clients.txt"), "a") as handle:
+            # 192.0.2.10 (documentation range), outside the fixture's 10.0.0.0/24
+            handle.write("Stray %s 1700000000 3221225994\n" % ("D" * 43 + "="))
+        data = self.ok("list")
+        stray = [c for c in data["clients"] if c["name"] == "Stray"][0]
+        self.assertEqual(stray["address"], "192.0.2.10")
+        self.assertFalse(stray["manageable"])
+        self.assertTrue(data["clients"][0]["manageable"])
+        self.assertIn("Stray: address 192.0.2.10 is outside the VPN subnet 10.0.0.0/24",
+                      " | ".join(data["warnings"]))
+        for request in ("remove Stray", "disable Stray", "get-config Stray"):
+            self.err(request, "invalid_request", 2)
+        self.assertEqual(self.env.calls(), [])
+
+    def test_unknown_vpn_subnet_skips_the_check_and_says_so(self):
+        self.env.write("setupVars.conf", "IPv4dev=eth0\n")
+        self.env.seed("Alpha")
+        data = self.ok("list")
+        self.assertTrue(data["clients"][0]["manageable"])
+        self.assertIn("could not read the VPN subnet", " | ".join(data["warnings"]))
+
+    def test_quoted_setupvars_values(self):
+        self.env.write("setupVars.conf", 'pivNET="10.0.0.0"\nsubnetClass=\'24\'\n')
+        self.env.seed("Alpha")
+        self.assertEqual(self.ok("list")["warnings"], [])
+
+    def test_crlf_and_bad_bytes_spoil_only_their_own_line(self):
+        self.env.seed("Alpha")
+        path = self.env.p("wg/configs/clients.txt")
+        with open(path, "rb") as handle:
+            good = handle.read().replace(b"\n", b"\r\n")
+        with open(path, "wb") as handle:
+            handle.write(good + b"Bad\xff %s 1700000000 167772361\r\n" % (b"E" * 43 + b"="))
+        data = self.ok("list")
+        self.assertEqual([c["name"] for c in data["clients"]], ["Alpha"])
+        self.assertIn("line 2: malformed entry skipped", " | ".join(data["warnings"]))
+
     def test_unmanageable_client_cannot_be_addressed(self):
         with open(self.env.p("wg/configs/clients.txt"), "a") as handle:
-            handle.write("a.b %s 1700000000 180410200\n" % ("A" * 43 + "="))
+            handle.write("a.b %s 1700000000 167772360\n" % ("A" * 43 + "="))
         self.err("remove a.b", "invalid_request", 2)
         self.assertEqual(self.env.calls(), [])
 
@@ -388,6 +444,15 @@ class AddTests(HelperTestCase):
         e = self.err("add Bob", "backend_failed", 5)
         self.assertTrue(e["partial"])
         self.assertEqual(e["failed_checks"][0], "backend_timeout")
+
+    def test_timeout_kills_everything_the_backend_started(self):
+        import time
+        self.env.switch("hang_child")
+        e = self.err("add Bob", "backend_failed", 5)
+        self.assertEqual(e["failed_checks"][0], "backend_timeout")
+        time.sleep(1.2)          # past the moment the orphan would have written
+        self.assertFalse(os.path.exists(self.env.p("late_write")),
+                         "a process started by the backend survived the timeout")
 
     def test_backend_not_runnable(self):
         os.unlink(self.env.p("bin/pivpn"))
@@ -582,6 +647,34 @@ class PreflightTests(HelperTestCase):
     def test_missing_setupvars(self):
         os.unlink(self.env.p("setupVars.conf"))
         self.err("list", "host_misconfigured", 6)
+
+    def test_writable_pivpn_script_refused(self):
+        os.chmod(self.env.p("scripts/makeCONF.sh"), 0o666)
+        self.err("add Bob", "host_misconfigured", 6)
+        self.assertEqual(self.env.calls(), [])
+
+    def test_writable_scripts_directory_refused(self):
+        os.chmod(self.env.p("scripts"), 0o777)
+        self.err("list", "host_misconfigured", 6)
+
+    def test_only_shell_scripts_are_judged(self):
+        self.env.write("scripts/notes.txt", "x")
+        os.chmod(self.env.p("scripts/notes.txt"), 0o666)
+        self.ok("list")
+
+    def test_missing_scripts_directory_refused(self):
+        shutil.rmtree(self.env.p("scripts"))
+        self.err("list", "host_misconfigured", 6)
+
+    def test_opened_file_is_checked_not_just_the_path(self):
+        # read_text judges the file it actually opened, so a file swapped in after
+        # preflight's lstat is still refused.
+        path = self.env.p("wg/wg0.conf")
+        os.chmod(path, 0o666)
+        settings = self.env.settings()
+        with self.assertRaises(ValueError):
+            h.read_text(path, 1024, settings)
+        self.assertIn("[Interface]", h.read_text(path, 1024))     # unchecked read still works
 
     def test_writable_pivpn_refused(self):
         os.chmod(self.env.p("bin/pivpn"), 0o775)

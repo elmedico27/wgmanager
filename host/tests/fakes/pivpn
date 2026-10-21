@@ -5,6 +5,8 @@ It reproduces the quirks the real scripts have, on purpose:
   * `remove` / `on` / `off` for an unknown client print "does not exist" and exit 0;
   * `off` on an already-disabled client does nothing and does not reload;
   * a failed service reload is not an error (exit 0) -- simulated by ctl/fail_reload.
+ctl/hang hangs; ctl/hang_child hangs after starting a child that writes ../late_write
+1.5 s later (to prove the helper kills the whole process group on timeout).
 
 Layout (relative to this file): ../wg is WG_DIR, ../ctl holds switches,
 ../calls.log records every invocation. Never used outside the test suite.
@@ -66,6 +68,15 @@ def finish(code=0):
 
 with open(os.path.join(ROOT, "calls.log"), "a") as log:
     log.write(" ".join(sys.argv[1:]) + "\n")
+
+if ctl("hang_child"):
+    # Like a PiVPN sub-script still running when the helper gives up: a separate
+    # process that would change state late if it were left alive.
+    import subprocess
+    subprocess.Popen([sys.executable, "-c",
+                      "import time; time.sleep(1.5); open(%r, 'w').close()"
+                      % os.path.join(ROOT, "late_write")])
+    time.sleep(60)
 
 if ctl("hang"):
     time.sleep(60)

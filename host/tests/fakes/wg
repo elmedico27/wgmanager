@@ -37,6 +37,10 @@ print("\t".join(["FAKEPRIVSECRET", fake_key("server"), "51820", "off"]))
 for pub in live:
     if ctl("never_connected"):
         endpoint, handshake, rx, tx = "(none)", "0", "0", "0"
+    elif ctl("big_counters"):
+        # Months of uptime: more than 1 TB in, and the largest 64-bit value out.
+        endpoint, handshake, rx, tx = ("203.0.113.5:51820", "1700000000",
+                                       "1500000000000", "18446744073709551615")
     else:
         endpoint, handshake, rx, tx = "203.0.113.5:51820", "1700000000", "111", "222"
     print("\t".join([pub, "FAKEPSKSECRET", endpoint, "10.0.0.2/32",

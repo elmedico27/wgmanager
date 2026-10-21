@@ -1,5 +1,8 @@
-# Install as /etc/wgmanager/authorized_keys, owner root, mode 0644 (NOT in the
+# Normally written for you by: sudo python3 host/wgmanager-host install --pubkey-file app_key.pub
+# Installed as /etc/wgmanager/authorized_keys, owner root, mode 0644 (NOT in the
 # wgweb home: the account must not be able to edit its own restrictions).
-# Replace the subnet with the container network's subnet (pin it in compose.yaml)
-# and the key with the PUBLIC half of the key generated for this app only.
-command="sudo -n /usr/local/sbin/wgmanager-helper --ssh",restrict,from="172.30.0.0/24" ssh-ed25519 AAAA_REPLACE_WITH_PUBLIC_KEY wgmanager
+# from= is loopback plus the container network pinned in the compose file
+# (default 172.29.88.0/29; change both together, with install --allow-from).
+# Networks must be written without host bits (172.29.88.0/29, not 172.29.88.5/29):
+# sshd rejects such an entry and then refuses the key from every address.
+command="sudo -n /usr/local/sbin/wgmanager-helper --ssh",restrict,from="127.0.0.1,::1,172.29.88.0/29" ssh-ed25519 AAAA_REPLACE_WITH_PUBLIC_KEY wgmanager
