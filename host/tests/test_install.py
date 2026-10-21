@@ -32,6 +32,8 @@ class InstallWorld(World):
     def __init__(self, test):
         super().__init__(test)
         self.pw = None
+        self.password_field = "!"         # what getent shadow reports once the user exists
+        self.groups = "wgweb"
         for path in (wh.HELPER_PATH, wh.SUDOERS_PATH, wh.SSHD_DROPIN_PATH, wh.AUTHORIZED_KEYS_PATH):
             os.unlink(self.real(path))
         os.rmdir(self.real(wh.CONFIG_DIR))
@@ -95,6 +97,13 @@ class InstallWorld(World):
             if self.pw is not None or "useradd_fails" in flags:
                 return (9, "", "useradd: cannot create user\n")
             self.pw = types.SimpleNamespace(pw_uid=997, pw_shell="/bin/sh", pw_dir="/nonexistent")
+            if "--password" in argv:
+                self.password_field = argv[argv.index("--password") + 1]
+            return ok()
+        if argv[0] == "usermod" and argv[1:3] == ("--password", "*"):
+            if "usermod_fails" in flags:
+                return (6, "", "usermod: cannot lock /etc/shadow\n")
+            self.password_field = "*"
             return ok()
         if argv[0] == "userdel":
             if "userdel_fails" in flags:
@@ -110,9 +119,9 @@ class InstallWorld(World):
         if argv == ("visudo", "-c"):
             return ok()
         if argv == ("id", "-nG", "wgweb"):
-            return ok("wgweb\n") if self.pw else (1, "", "id: 'wgweb': no such user")
+            return ok(self.groups + "\n") if self.pw else (1, "", "id: 'wgweb': no such user")
         if argv == ("getent", "shadow", "wgweb"):
-            return ok("wgweb:!:19000:::::\n") if self.pw else (2, "", "")
+            return ok("wgweb:%s:19000:::::\n" % self.password_field) if self.pw else (2, "", "")
         if argv == ("sudo", "-n", "-l", "-U", "wgweb"):
             if self.pw and self.exists(wh.SUDOERS_PATH):
                 return ok(GOOD_SUDO_L)
@@ -344,7 +353,9 @@ class InputValidationTests(InstallTestCase):
     def test_sources(self):
         self.assertEqual(wh.parse_sources("127.0.0.1, ::1,10.0.0.0/8"), ["127.0.0.1", "::1", "10.0.0.0/8"])
         for bad, needle in (("example.com", "not an IP"), ("*", "not an IP"), ("0.0.0.0/0", "every address"),
-                            ("::/0", "every address"), ("", "no source"), ("10.0.0.1/33", "not an IP")):
+                            ("::/0", "every address"), ("", "no source"), ("10.0.0.1/33", "not an IP"),
+                            ("172.29.88.5/29", "did you mean 172.29.88.0/29"),
+                            ("fd00::1/64", "did you mean fd00::/64")):
             with self.assertRaises(wh.InstallError) as caught:
                 wh.parse_sources(bad)
             self.assertIn(needle, str(caught.exception), bad)
@@ -415,6 +426,90 @@ class PreflightRefusalTests(InstallTestCase):
         code, out = self.install()
         self.assertEqual(code, 0, out)
         self.assertFalse([c for c in self.w.calls if c[0] == "useradd"])
+
+
+class ProactiveFixTests(InstallTestCase):
+    """Things that are wgmanager's own: install fixes them instead of leaving
+    them for doctor. Anything that belongs to someone else is only reported."""
+
+    def existing_account(self, password_field="!", groups="wgweb"):
+        self.w.pw = types.SimpleNamespace(pw_uid=997, pw_shell="/bin/sh", pw_dir="/nonexistent")
+        self.w.password_field = password_field
+        self.w.groups = groups
+
+    def test_new_account_gets_no_password_rather_than_a_locked_one(self):
+        self.install()
+        useradd = [c for c in self.w.calls if c[0] == "useradd"][0]
+        self.assertEqual(useradd[useradd.index("--password") + 1], "*")
+        self.assertEqual(self.w.password_field, "*")
+        self.assertFalse([c for c in self.w.calls if c[0] == "usermod"])
+
+    def test_existing_locked_account_is_set_to_no_password(self):
+        for field in ("!", "", "$y$j9T$somehash"):
+            with self.subTest(field=field):
+                self.existing_account(field)
+                code, out = self.install()
+                self.assertEqual(code, 0, out)
+                self.assertIn("password field of wgweb set to '*'", out)
+                self.assertEqual(self.w.password_field, "*")
+
+    def test_account_already_without_password_is_left_alone(self):
+        self.existing_account("*")
+        code, out = self.install()
+        self.assertEqual(code, 0, out)
+        self.assertFalse([c for c in self.w.calls if c[0] == "usermod"])
+
+    def test_usermod_failure_rolls_back(self):
+        self.existing_account("!")
+        self.w.flags.add("usermod_fails")
+        code, out = self.install()
+        self.assertEqual(code, 1, out)
+        self.assertIn("usermod failed", out)
+        self.assertNothingInstalled(account_untouched=True)
+
+    def test_account_in_a_privileged_group_is_refused_not_changed(self):
+        self.existing_account(groups="wgweb sudo docker")
+        code, out = self.install()
+        self.assertEqual(code, 1, out)
+        self.assertIn("privileged group(s) docker, sudo", out)
+        self.assertIn("sudo gpasswd -d wgweb sudo", out)
+        self.assertNothingInstalled(account_untouched=True)
+        self.assertFalse([c for c in self.w.calls if c[0] in ("usermod", "gpasswd")])
+
+    def test_loose_config_directory_is_tightened(self):
+        os.makedirs(self.w.real(wh.CONFIG_DIR))
+        self.w.chmod(wh.CONFIG_DIR.lstrip("/"), 0o777)
+        code, out = self.install()
+        self.assertEqual(code, 0, out)
+        self.assertIn("tightening its owner/mode", out)
+        self.assertEqual(self.mode(wh.CONFIG_DIR), 0o755)
+
+    def test_tightened_config_directory_is_restored_on_rollback(self):
+        os.makedirs(self.w.real(wh.CONFIG_DIR))
+        self.w.chmod(wh.CONFIG_DIR.lstrip("/"), 0o775)
+        self.w.flags.add("reload_fails")
+        code, out = self.install()
+        self.assertEqual(code, 1, out)
+        self.assertEqual(self.mode(wh.CONFIG_DIR), 0o775)
+
+    def test_config_path_that_is_not_a_directory_is_refused(self):
+        self.w.write(wh.CONFIG_DIR, "not a directory\n")
+        code, out = self.install()
+        self.assertEqual(code, 1, out)
+        self.assertIn("is not a directory", out)
+
+    def test_dropin_disables_all_forwarding(self):
+        self.install()
+        self.assertIn(b"DisableForwarding yes", self.w.read(wh.SSHD_DROPIN_PATH))
+
+    def test_sources_overlapping_the_vpn_subnet_get_a_note(self):
+        code, out = self.install("--allow-from", "127.0.0.1,10.0.0.0/16")
+        self.assertEqual(code, 0, out)
+        self.assertIn("overlaps the VPN client subnet 10.0.0.0/24", out)
+
+    def test_default_sources_do_not_overlap_the_vpn_subnet(self):
+        code, out = self.install()
+        self.assertNotIn("overlaps", out)
 
 
 class RollbackTests(InstallTestCase):
@@ -568,6 +663,17 @@ class UninstallTests(InstallTestCase):
         self.assertEqual(code, 1)
         self.assertIn("put back", out)
         for path in (wh.SSHD_DROPIN_PATH, wh.HELPER_PATH, wh.SUDOERS_PATH, wh.AUTHORIZED_KEYS_PATH):
+            self.assertTrue(self.w.exists(path), path)
+        self.assertIsNotNone(self.w.pw)
+
+    def test_dropin_that_cannot_be_removed_stops_everything_else(self):
+        self.install()
+        os.unlink(self.w.real(wh.SSHD_DROPIN_PATH))
+        os.makedirs(self.w.real(wh.SSHD_DROPIN_PATH))       # unlink() now fails with an OSError
+        code, out = self.go("uninstall", "--yes")
+        self.assertEqual(code, 1, out)
+        self.assertIn("Stopping here", out)
+        for path in (wh.HELPER_PATH, wh.SUDOERS_PATH, wh.AUTHORIZED_KEYS_PATH):
             self.assertTrue(self.w.exists(path), path)
         self.assertIsNotNone(self.w.pw)
 

@@ -11,6 +11,10 @@ Requirements: a Debian-family host (what PiVPN itself supports) with PiVPN's
 WireGuard install, `python3`, `sudo` and OpenSSH server. Python's standard library
 is all that is used; nothing is downloaded.
 
+`install` runs as root from your checkout of this repository and copies the helper
+out of it, so treat that checkout like any other root-run code: keep it writable
+only by you.
+
 ## Install
 
 You need the app's **public** key (never the private one). Then, from a checkout
@@ -26,8 +30,26 @@ upgrades the helper.
 
 By default the key may connect from this machine (`127.0.0.1`, `::1`) and from the
 container network `172.29.88.0/29`, the small subnet the project's compose file
-pins for the app. Use `--allow-from 10.1.2.0/24,...` to give your own list.
+pins for the app. It was picked only to be unlikely to collide with existing
+networks. If it clashes with one of yours, change it in the compose file and give
+the same value here with `--allow-from 10.1.2.0/24,...`. Networks must be written
+without host bits (`10.1.2.0/24`, not `10.1.2.5/24`); install refuses them because
+sshd would reject the key from every address. Install also points out an entry
+that overlaps the VPN client subnet: a Docker network must never overlap it.
 Installing without `--pubkey-file` sets up everything except the key.
+
+Install fixes what belongs to wgmanager rather than leaving it for `doctor`: it
+tightens an existing `/etc/wgmanager` that is writable by others, and gives the
+`wgweb` account the password field `*` (no usable password, but not "locked",
+which sshd refuses for key logins when `UsePAM` is off). It never changes anything
+that belongs to someone else. PiVPN's files and scripts that are writable by
+non-root users, or a `wgweb` account that someone put in a privileged group such
+as `sudo` or `docker`, stop the install with the exact command to fix them.
+
+On systems where sshd is socket-activated (Ubuntu 22.10 and later), the ssh
+service only runs after the first connection. Install needs it running, so
+connect over SSH once first. There, the port and listen addresses come from
+`ssh.socket`, not `sshd_config`.
 
 ## Check
 
@@ -54,15 +76,15 @@ helper and the `wgweb` account. The helper's backups of your WireGuard config in
 | `/usr/local/sbin/wgmanager-helper` | the root-owned helper |
 | `wgweb` system user | no home, no password, no groups of note |
 | `/etc/sudoers.d/wgmanager` | lets `wgweb` run the helper with `--ssh`, nothing else |
-| `/etc/ssh/sshd_config.d/wgmanager.conf` | for user `wgweb` only: key login, no tty, no forwarding, forced command |
+| `/etc/ssh/sshd_config.d/wgmanager.conf` | for user `wgweb` only: key login, no tty, no forwarding of any kind, forced command |
 | `/etc/wgmanager/authorized_keys` | the app's key, limited to the helper command and the allowed source addresses |
 | `/etc/wgmanager/config` | optional settings (see `etc/wgmanager/config.example`); never created for you |
 | `/var/backups/wgmanager` | created by the helper on the first change |
 
 It never edits an existing file of yours. It adds its own files only, and refuses
 to continue if `/etc/ssh/sshd_config` does not include `sshd_config.d`, if sshd's
-`AllowUsers`/`AllowGroups` would lock `wgweb` out, or if the PiVPN files are
-writable by non-root users.
+`AllowUsers`/`AllowGroups` would lock `wgweb` out, or if PiVPN's files or scripts
+are writable by non-root users.
 
 ## Tests
 

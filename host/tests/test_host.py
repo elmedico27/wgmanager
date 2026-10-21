@@ -35,16 +35,16 @@ GOOD_SSHD = "\n".join([
     "pubkeyauthentication yes", "passwordauthentication no",
     "kbdinteractiveauthentication no", "authenticationmethods publickey",
     "permittty no", "x11forwarding no", "allowagentforwarding no",
-    "allowtcpforwarding no", "permittunnel false",
+    "allowtcpforwarding no", "permittunnel false", "disableforwarding yes",
 ]) + "\n"
 GOOD_SUDO_L = ("Matching Defaults entries for wgweb on host:\n    env_keep+=SSH_ORIGINAL_COMMAND\n\n"
                "User wgweb may run the following commands on host:\n"
                "    (root) NOPASSWD: /usr/local/sbin/wgmanager-helper --ssh\n")
-GOOD_KEY = ('command="%s",restrict,from="127.0.0.1,::1,172.30.0.0/29" '
+GOOD_KEY = ('command="%s",restrict,from="127.0.0.1,::1,172.29.88.0/29" '
             'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEKEYFAKEKEYFAKEKEYFAKEKEYFAKEKEYFAKEKEY wgmanager\n'
             % wh.FORCED_COMMAND)
 VERSION_JSON = {"ok": True, "protocol": 1, "data": {
-    "helper_version": "0.1.1", "protocol": 1, "backend": "pivpn", "interface": "wg0",
+    "helper_version": "0.1.2", "protocol": 1, "backend": "pivpn", "interface": "wg0",
     "pivpn_scripts": {}}}
 LIST_JSON = {"ok": True, "protocol": 1, "data": {
     "interface": {"name": "wg0", "up": True},
@@ -106,7 +106,7 @@ class World:
         os.symlink(os.path.join(self.pv, "pivpn-real/wg"), os.path.join(self.pv, "bin/wg"))
         self.raw_write(os.path.join(self.pv, "wg/wg0.conf"), "[Interface]\n")
         self.raw_write(os.path.join(self.pv, "wg/configs/clients.txt"), "")
-        self.raw_write(os.path.join(self.pv, "setupVars.conf"), "")
+        self.raw_write(os.path.join(self.pv, "setupVars.conf"), "pivNET=10.0.0.0\nsubnetClass=24\n")
         self.ctx = wh.Host(root=self.root, expected_uid=os.getuid(), runner=self.run,
                            getpwnam=self.getpwnam, euid=0, settings_loader=self.load_settings)
 
@@ -496,6 +496,10 @@ class SshdTests(DoctorTestCase):
         rep = self.doctor()
         self.assertIn("port 22", "\n".join(self.texts(rep, "info")))
 
+    def test_forwarding_not_disabled_fails(self):
+        self.sshd(GOOD_SSHD.replace("disableforwarding yes", "disableforwarding no"))
+        self.assertFailMentions(self.doctor(), "disableforwarding = no")
+
     def test_dropin_differing_from_checkout_warns(self):
         self.world.write(wh.SSHD_DROPIN_PATH, "Match User wgweb\n    X11Forwarding no\n")
         rep = self.doctor()
@@ -527,14 +531,18 @@ class AuthorizedKeysTests(DoctorTestCase):
         self.assertFailMentions(self.doctor(), "does not force the helper command")
 
     def test_missing_from_warns(self):
-        self.keys(GOOD_KEY.replace(',from="127.0.0.1,::1,172.30.0.0/29"', ""))
+        self.keys(GOOD_KEY.replace(',from="127.0.0.1,::1,172.29.88.0/29"', ""))
         rep = self.doctor()
         self.assertEqual(self.texts(rep, "fail"), [])
         self.assertIn("no from= restriction", "\n".join(self.texts(rep, "warn")))
 
     def test_any_source_warns(self):
-        self.keys(GOOD_KEY.replace("127.0.0.1,::1,172.30.0.0/29", "0.0.0.0/0"))
+        self.keys(GOOD_KEY.replace("127.0.0.1,::1,172.29.88.0/29", "0.0.0.0/0"))
         self.assertIn("allows any source", "\n".join(self.texts(self.doctor(), "warn")))
+
+    def test_from_entry_with_host_bits_fails(self):
+        self.keys(GOOD_KEY.replace("172.29.88.0/29", "172.29.88.5/29"))
+        self.assertFailMentions(self.doctor(), "has host bits set")
 
     def test_missing_restrict_warns(self):
         self.keys(GOOD_KEY.replace(",restrict", ""))

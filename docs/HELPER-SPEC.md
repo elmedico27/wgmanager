@@ -1,8 +1,9 @@
 # wgmanager host helper: specification
 
-**Status:** helper 0.1.1 implemented in `host/wgmanager-helper` with 63 unit tests
-(`host/tests/`), all passing against stub `pivpn`/`wg`, and verified on a real
-host (section 14 records what was checked). `host/wgmanager-host doctor` reuses
+**Status:** helper 0.1.2 implemented in `host/wgmanager-helper` with unit tests
+(`host/tests/`), all passing against stub `pivpn`/`wg`. 0.1.1 was verified on a
+real host (section 14 records what was checked); 0.1.2 adds the fixes listed in
+section 17. `host/wgmanager-host doctor` reuses
 the helper's preflight checks (section 10) and is covered by its own tests.
 **Scope:** the host-side, root-privileged component only. The web app, UI and
 container are specified separately and must treat this document as the contract.
@@ -49,8 +50,12 @@ compromised account cannot rewrite its own restrictions.
 Account creation (copy-paste form is in the install docs, later):
 
 ```
-useradd --system --home-dir /nonexistent --no-create-home --shell /bin/sh wgweb
+useradd --system --user-group --home-dir /nonexistent --no-create-home \
+        --shell /bin/sh --password '*' wgweb
 ```
+
+The password field `*` means no password can ever match, without marking the
+account "locked" (`!`), which sshd refuses for key logins when `UsePAM` is off.
 
 The shell must stay a real shell (`/bin/sh`, not `nologin`): sshd runs forced
 commands through the account's shell, so `nologin` would break them. The forced
@@ -99,8 +104,12 @@ Match User wgweb
     AllowAgentForwarding no
     AllowTcpForwarding no
     PermitTunnel no
+    DisableForwarding yes
     ForceCommand sudo -n /usr/local/sbin/wgmanager-helper --ssh
 ```
+
+`DisableForwarding` also covers Unix-socket forwarding, which `AllowTcpForwarding`
+does not. The key's `restrict` option already blocks it; this is a second layer.
 
 `/etc/wgmanager/authorized_keys` (one line; `from=` is the container subnet,
 pinned in the compose file):
@@ -142,10 +151,12 @@ A valid name must satisfy all of:
 This is deliberately stricter than PiVPN, which also allows `.` and `@` and
 inserts names into `grep` and `sed` patterns where `.` is a wildcard.
 
-An existing PiVPN client whose name fails these rules (for example one with a
-`.`) is still listed, with `manageable: false`. No action can address it: the
-request grammar rejects its name before anything else runs (`invalid_request`).
-Manage such clients with `pivpn` directly. The UI should disable its buttons.
+An existing PiVPN client is still listed, with `manageable: false`, when its name
+fails these rules (for example one with a `.`) or its address is outside the VPN
+subnet (section 7). No action can address it, `get-config` included: an unsafe
+name fails the request grammar, and an out-of-subnet client is refused once
+found. Both return `invalid_request`. Manage such clients with `pivpn` directly.
+The UI should disable their buttons and show the matching warning.
 
 ## 5. Responses and exit codes
 
@@ -185,7 +196,7 @@ host is otherwise misconfigured. `pivpn_scripts` is diagnostic only (`null` for 
 unreadable script); it is never enforced.
 
 ```json
-{"helper_version": "0.1.1", "protocol": 1, "backend": "pivpn", "interface": "wg0",
+{"helper_version": "0.1.2", "protocol": 1, "backend": "pivpn", "interface": "wg0",
  "pivpn_scripts": {"makeCONF.sh": "<sha256>", "removeCONF.sh": "<sha256>",
                    "enableCONF.sh": "<sha256>", "disableCONF.sh": "<sha256>"}}
 ```
@@ -223,7 +234,8 @@ One call returns clients and live stats (one SSH round trip per UI refresh).
 
 ### add NAME
 
-Creates the client. Returns the new client (without live stats) and its full
+Creates the client. Returns the new client, in the same shape as in `list` (live
+stats are usually `null` because the peer has not connected yet), and its full
 config text, which **contains the client's private key**.
 
 ```json
@@ -272,16 +284,22 @@ a client config 8 KiB).
 
 - **`<WG_DIR>/configs/clients.txt`**: one client per line,
   `name public_key created_epoch address_decimal`. Fields are validated
-  (public key is 44-character base64, epoch and address are digits, address is
-  inside the interface subnet). A malformed line is skipped and reported in
-  `warnings`; it does not fail `list`. `address` is the decimal field converted to
-  dotted form.
+  (public key is 44-character base64, epoch and address are digits). A malformed
+  line is skipped and reported in `warnings`; it does not fail `list`. A stray
+  non-UTF-8 byte or a Windows line ending spoils only its own line. `address` is
+  the decimal field converted to dotted form.
+- **VPN subnet check:** the subnet is read from PiVPN's `setupVars.conf`
+  (`pivNET` and `subnetClass`, quotes allowed). A client whose address is outside
+  it is **listed but marked `manageable: false`**, with a warning. Hiding a real
+  peer would be worse than greying it out. If the subnet cannot be read, the check
+  is skipped and a warning says so.
 - **`<WG_DIR>/wg0.conf`** (the file for the configured interface): scanned line
   by line with exact string comparison, never with a pattern built from a name.
   A client is *enabled* if the line `### begin NAME ###` exists and *disabled*
   if `#[disabled] ### begin NAME ###` exists. The helper reads this file only to
   learn enabled state; it never parses or modifies the `[Interface]` section.
-- **Live state:** `wg show <iface> dump` (fixed argv, 5 s timeout). Line 1 is the
+- **Live state:** `wg show <iface> dump` (fixed argv, 5 s timeout). Handshake
+  times and byte counters are 64-bit values of up to 20 digits. Line 1 is the
   interface (`private-key public-key listen-port fwmark`; only `public-key` and
   `listen-port` are used). Each further line is a peer
   (`public-key preshared-key endpoint allowed-ips latest-handshake transfer-rx transfer-tx persistent-keepalive`;
@@ -305,7 +323,9 @@ Common procedure for `add`, `remove`, `enable`, `disable`:
    holds the server private key, exactly like the file it copies.
 5. Run the backend with a fixed argument list, working directory `/`, empty
    stdin, a minimal environment (`PATH=/usr/sbin:/usr/bin:/sbin:/bin`,
-   `LC_ALL=C`), `umask 077`, and a 30 s timeout.
+   `LC_ALL=C`), `umask 077`, and a 30 s timeout. The backend runs in its own
+   process group; on timeout the whole group is killed, so nothing `pivpn` started
+   can keep changing files after the helper answers and releases the lock.
 6. Re-read state and verify postconditions (table below). Live-interface checks
    retry for up to 3 s.
 7. Log the result and return it.
@@ -330,6 +350,11 @@ stdin is empty. One invocation form works on both.
 | enable | as above; if already enabled, return `changed:false` and stop | enabled marker present; peer live |
 | disable | as above; if already disabled, return `changed:false` and stop | disabled marker present; peer not live |
 
+**Timing for the app.** The worst case for one mutation is about 45 s (10 s lock
+wait, 30 s backend, 3 s verification, plus reads). The app's SSH timeout must be
+longer (60 s), and the app must never retry a mutation on its own after a
+timeout. The outcome is unknown until a fresh `list`.
+
 **No automatic rollback in v1.** If postconditions fail, the helper exits 5 and
 leaves the state as it is; the pre-change backup is the recovery path (manual
 restore, documented). Automatic rollback by calling PiVPN again can compound a
@@ -346,7 +371,7 @@ structured detail so the UI can show a clear, persistent warning:
            "partial": true,
            "failed_checks": ["live_peer"],
            "backend_exit_code": 0,
-           "backup": "20261020T211500Z-add-Bob_Phone"}}
+           "backup": "20261020T211500123Z-add-Bob_Phone"}}
 ```
 
 - `failed_checks` uses a fixed vocabulary, never free text: `client_record`
@@ -399,9 +424,14 @@ Fail with exit 6 `host_misconfigured` (fixed message; detail to the journal) unl
   directory that merely holds a symlink (for example `/usr/local/bin`, which is
   user-owned on some systems) is deliberately not trusted or checked: swapping the link can only point at something that must itself pass
   these checks;
-- `<WG_DIR>/configs/clients.txt` and `<WG_DIR>/<iface>.conf` exist, are regular
-  files, root-owned, not group- or world-writable;
-- `/etc/pivpn/wireguard/setupVars.conf` exists (a PiVPN WireGuard install).
+- `<WG_DIR>/configs/clients.txt`, `<WG_DIR>/<iface>.conf` and PiVPN's
+  `setupVars.conf` exist, are regular files, root-owned, not group- or
+  world-writable. These files are checked again on the open file descriptor
+  when they are read, so a file swapped in after the first check is still
+  refused. The settings file is checked the same way;
+- `PIVPN_SCRIPTS_DIR` exists, and it and every `*.sh` in it are root-owned and
+  not group- or world-writable: `pivpn` runs those scripts as root. Only what is
+  present is judged.
 
 Note: PiVPN creates its files mode 644 and `configs/` 755, so private keys are
 readable by any local user. That is a host
@@ -460,7 +490,7 @@ If the web app, its container or the SSH key is compromised, an attacker can:
 - enable, disable or delete existing clients;
 - **read every client's config, including private keys** (`get-config`).
 
-They cannot, through this key: get a shell, run any command other than the six
+They cannot, through this key: get a shell, run any command other than the seven
 actions, read or write any other file, edit the server's `[Interface]` section,
 or reach `PostUp`/`PreUp`. Treat the web UI as sensitive: LAN-only, strong
 admin password, never exposed to the internet.
@@ -468,35 +498,49 @@ admin password, never exposed to the internet.
 Because retaining client configs is inherent to PiVPN, this exposure exists
 today on the host regardless of wgmanager.
 
-## 14. To verify on the real host before relying on this
+## 14. Verified on a real host
 
-Do not assume; each of these is tested during the first install:
+Checked with helper 0.1.1 on a Debian host running v4.6.x-era PiVPN scripts:
 
-1. `Defaults!command env_keep` passes `SSH_ORIGINAL_COMMAND` on the installed sudo.
+1. `Defaults!command env_keep` passes `SSH_ORIGINAL_COMMAND` through sudo.
 2. sshd uses the configured `ForceCommand` when `command=` is also present, and
-   sets `SSH_ORIGINAL_COMMAND` in both cases (`sshd -T -C user=wgweb,...`).
-3. Key login works for the system account with its locked password.
-4. The source address sshd sees from the container matches the `from=` subnet.
-5. The column layout of `wg show <iface> dump` on the installed wireguard-tools.
-6. After `add`, existing VPN sessions stay up (PiVPN reloads with `wg syncconf`).
-7. `python3` is present on the target (confirm the
-   README's minimum).
-8. `pivpn add -n NAME` with empty stdin allocates an address and completes without
-   prompting, on both the installed (v4.6.x-era) and current PiVPN scripts. This is
-   inferred from reading the scripts, not yet tested.
+   sets `SSH_ORIGINAL_COMMAND`.
+3. Key login works for the system account; password login is impossible, and
+   `from=` is enforced.
+4. The `wg show <iface> dump` column layout matches section 7.
+5. A full add/disable/enable/remove cycle left existing VPN sessions up (their
+   transfer counters never reset).
+6. `pivpn add -n NAME` with empty stdin completes without prompting.
+7. `wgmanager-host install`, `doctor`, `uninstall` and reinstall all ran clean.
 
-## 15. Open decisions for review
+Still to check:
 
-1. **Backups before each change** (section 8, step 4): lean yes. Cost is a few
-   KB per change and a root-only directory.
-2. **Report PiVPN script hashes in `version`** as diagnostics, to make
-   "tested with" matching easy: lean yes, informational only, not enforced.
-3. **Root-owned `authorized_keys` outside the home** (sections 2 and 3.1): lean yes.
-4. **No automatic rollback in v1** (section 8): **decided**, on the condition that
-   failures are reported clearly (section 8.1). Revisit after real use.
+- The source address sshd sees from the container matches the `from=` subnet
+  (once the container exists).
+- Empty-stdin `pivpn add` on **current** PiVPN scripts (only the v4.6.x-era ones
+  have been run).
+
+## 15. Decisions taken during review
+
+1. Backups before each change: yes.
+2. PiVPN script hashes in `version`: yes, informational only.
+3. Root-owned `authorized_keys` outside the home: yes.
+4. No automatic rollback in v1, on the condition that failures are reported
+   clearly (section 8.1). Revisit after real use.
 
 ## 16. Out of scope for v1
 
 Importing clients created outside PiVPN, multiple interfaces, IPv6-specific
 handling beyond what PiVPN does itself, editing any config, a native
 (non-PiVPN) backend, and non-systemd hosts.
+
+## 17. Changes in 0.1.2
+
+- Byte counters and handshake times of up to 20 digits are accepted. Before, a
+  peer with more than about 999 GB of traffic was dropped from the live list,
+  which also made post-change verification blind for that peer.
+- On backend timeout the whole process group is killed (section 8).
+- Clients outside the VPN subnet are listed as unmanageable (sections 4.1 and 7).
+- File checks are repeated on the opened file descriptor, and PiVPN's `*.sh`
+  scripts are vetted (section 10).
+- A non-UTF-8 byte or CRLF in `clients.txt` spoils one line, not the whole list.
