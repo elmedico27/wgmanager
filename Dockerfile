@@ -6,11 +6,17 @@
 # tags checked in docker-library/official-images on 2026-10-22). Alpine's
 # openssh-client-default provides ssh and depends on openssh-keygen and
 # openssh-client-common (ssh-keygen, ssh-keyscan); checked in aports
-# 3.24-stable main/openssh/APKBUILD (OpenSSH 10.3p1).
-ARG NODE_IMAGE=node:26.12.1-alpine3.24
+# 3.24-stable main/openssh/APKBUILD (OpenSSH 10.3p1). tini (community, 0.19.0,
+# installs /sbin/tini) runs as PID 1: the shared SSH connection detaches into
+# the background, and Node as PID 1 does not reap such orphans, which leaves
+# zombie processes (reproduced with Node as PID 1; none with tini).
+# The tag is written out in each FROM line so Dependabot can update it.
 
 # --- the UI --------------------------------------------------------------------
-FROM ${NODE_IMAGE} AS web
+# The UI and the backend's dependency are the same on every CPU, so these two
+# stages run on the builder's own platform (no emulation); see Docker's
+# multi-platform docs (FROM --platform=$BUILDPLATFORM).
+FROM --platform=$BUILDPLATFORM node:26.12.1-alpine3.24 AS web
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -18,14 +24,14 @@ COPY web/ ./
 RUN npm run build
 
 # --- the backend's one dependency ----------------------------------------------------
-FROM ${NODE_IMAGE} AS server
+FROM --platform=$BUILDPLATFORM node:26.12.1-alpine3.24 AS server
 WORKDIR /src/server
 COPY server/package.json server/package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 
 # --- runtime -----------------------------------------------------------------------------
-FROM ${NODE_IMAGE}
-RUN apk add --no-cache openssh-client-default
+FROM node:26.12.1-alpine3.24
+RUN apk add --no-cache openssh-client-default tini
 
 WORKDIR /opt/wgmanager
 COPY --from=server /src/server/node_modules server/node_modules
@@ -57,4 +63,5 @@ LABEL org.opencontainers.image.title="WG Manager" \
       org.opencontainers.image.description="Web UI for a PiVPN WireGuard server" \
       org.opencontainers.image.source="https://github.com/elmedico27/wgmanager"
 
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "/opt/wgmanager/server/src/main.js"]
