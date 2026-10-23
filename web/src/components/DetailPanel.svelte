@@ -1,4 +1,5 @@
 <script>
+  import { copyText, COPY_FAILED } from '../lib/clipboard.js';
   import { fly, fade } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import Icon from './Icon.svelte';
@@ -66,12 +67,7 @@
   }
 
   async function copyKey() {
-    try {
-      await navigator.clipboard.writeText(client.public_key);
-      notify('Public key copied');
-    } catch {
-      notify('Copy was blocked. Select the key and copy it instead.');
-    }
+    notify((await copyText(client.public_key)) ? 'Public key copied' : COPY_FAILED);
   }
 
   let canEnable = $derived(client && client.enabled === false && up);

@@ -1,6 +1,7 @@
 <script>
   // QR code and config text for one client. Nothing is fetched until the admin
   // asks for it, because both contain the client's private key.
+  import { copyText, COPY_FAILED } from '../lib/clipboard.js';
   import Icon from './Icon.svelte';
   import { api, MOCK } from '../lib/api.js';
   import { errorText } from '../lib/format.js';
@@ -58,12 +59,7 @@
   }
 
   async function copy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      notify('Config copied');
-    } catch {
-      notify('Copy was blocked. Select the text and copy it instead.');
-    }
+    notify((await copyText(text)) ? 'Config copied' : COPY_FAILED);
   }
 
   onDestroy(() => {
