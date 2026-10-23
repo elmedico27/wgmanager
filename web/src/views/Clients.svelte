@@ -2,7 +2,7 @@
   import Icon from '../components/Icon.svelte';
   import StatusDot from '../components/StatusDot.svelte';
   import ClientCard from '../components/ClientCard.svelte';
-  import { app, refresh, savePrefs } from '../lib/store.svelte.js';
+  import { app, refresh, connect, savePrefs, isFlagged } from '../lib/store.svelte.js';
   import { bytes, status, connection, ago, errorText } from '../lib/format.js';
 
   let list = $derived(app.list);
@@ -21,9 +21,21 @@
 
   async function manualRefresh() {
     refreshing = true;
-    await refresh();
+    if (app.hostError) await connect();
+    else await refresh();
     refreshing = false;
   }
+
+  let hostTitle = $derived(
+    {
+      unreachable: 'Cannot reach the server',
+      timeout: 'The server is not answering',
+      hostkey_changed: 'Stopped for safety',
+      protocol_mismatch: 'Helper and app versions do not match',
+      bad_response: 'The helper answered something unexpected',
+      server_error: 'WG Manager hit an error',
+    }[app.hostError?.code] ?? 'The server has a problem',
+  );
 
   function setLayout(l) {
     app.layout = l;
@@ -68,8 +80,8 @@
     </div>
     <button
       class="btn btn-primary"
-      disabled={!up || !list}
-      title={!up ? 'The interface is down, so a new client could not go live' : undefined}
+      disabled={!up || !list || !!app.hostError}
+      title={app.hostError ? 'Changes are paused until the server can be reached' : !up ? 'The interface is down, so a new client could not go live' : undefined}
       onclick={() => (app.adding = true)}
     >
       <Icon name="plus" size={16} /> Add client
@@ -77,14 +89,19 @@
   </div>
 </header>
 
-{#if app.hostError && app.hostError.code !== 'protocol_mismatch'}
-  <div class="rounded-xl border border-off/40 bg-off-soft px-4 py-3 text-sm">
-    <span class="font-medium text-off">{app.hostError.code === 'hostkey_changed' ? 'Stopped for safety.' : 'Cannot reach the helper.'}</span>
-    <span class="text-ink-2">{errorText(app.hostError)}</span>
+{#if app.hostError}
+  <div class="flex flex-wrap items-start gap-3 rounded-xl border border-off/40 bg-off-soft px-4 py-3 text-sm">
+    <Icon name="alert" size={18} class="mt-0.5 shrink-0 text-off" />
+    <div class="min-w-0 flex-1">
+      <div class="font-medium">{hostTitle}</div>
+      <div class="text-ink-2">{errorText(app.hostError)}</div>
+      <div class="mt-1 text-ink-3">
+        {list ? 'The list below is the last one received. ' : ''}Changes are paused. WG Manager checks again every 15 seconds.
+      </div>
+    </div>
+    <button class="btn btn-ghost h-8" onclick={manualRefresh} disabled={refreshing}>Check now</button>
   </div>
-{/if}
-
-{#if app.listError}
+{:else if app.listError}
   <div class="flex flex-wrap items-center gap-3 rounded-xl border border-off/40 bg-off-soft px-4 py-3 text-sm">
     <Icon name="alert" size={16} class="text-off" />
     <span class="flex-1 text-ink">{errorText(app.listError)}{list ? ' The list below may be out of date.' : ''}</span>
@@ -116,17 +133,21 @@
   </div>
 {/if}
 
-{#if !list && !app.listError}
+{#if !list && !app.listError && !app.hostError}
   <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
     {#each Array(6) as _}
       <div class="h-36 animate-pulse rounded-xl border border-line bg-surface"></div>
     {/each}
   </div>
+{:else if !list}
+  <div class="rounded-xl border border-dashed border-line px-6 py-14 text-center text-sm text-ink-3">
+    No client list yet. It appears here as soon as WG Manager can reach the server.
+  </div>
 {:else if list && clients.length === 0}
   <div class="flex flex-col items-center gap-3 rounded-xl border border-dashed border-line px-6 py-14 text-center">
     <div class="font-medium">No clients yet</div>
     <p class="max-w-sm text-sm text-ink-2">Add a client for each phone, laptop or router that should connect. You'll get a QR code and a config file for it.</p>
-    <button class="btn btn-primary" disabled={!up} onclick={() => (app.adding = true)}><Icon name="plus" size={16} /> Add client</button>
+    <button class="btn btn-primary" disabled={!up || !!app.hostError} onclick={() => (app.adding = true)}><Icon name="plus" size={16} /> Add client</button>
   </div>
 {:else if list && app.layout === 'cards'}
   <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -164,7 +185,7 @@
                   <span class="font-medium">{c.name}</span>
                   <Icon name="lock" size={14} />
                 {/if}
-                {#if app.flagged[c.name]}<span class="rounded-full bg-warn-soft px-1.5 text-xs text-warn">Check</span>{/if}
+                {#if isFlagged(c.name)}<span class="rounded-full bg-warn-soft px-1.5 text-xs text-warn">Check</span>{/if}
                 {#if app.pending[c.name]}<span class="size-3 animate-spin rounded-full border-2 border-accent border-t-transparent"></span>{/if}
               </div>
             </td>

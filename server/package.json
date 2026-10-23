@@ -1,0 +1,17 @@
+{
+  "name": "wgmanager-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "wgmanager backend: serves the UI and talks to the host helper over SSH. Node built-ins only, plus qrcode.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test --test-concurrency=1 \"test/*.test.js\""
+  },
+  "dependencies": {
+    "qrcode-generator": "2.0.4"
+  }
+}

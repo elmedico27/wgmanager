@@ -41,6 +41,7 @@ export function date(epoch) {
 
 /** Status for the dot: green live, red disabled, yellow anything else (owner, 2026-10-22). */
 export function status(c, ifaceUp) {
+  if (!c.manageable) return { tone: 'warn', label: 'Managed outside wgmanager' };
   if (c.enabled === true && c.live) return { tone: 'live', label: 'Live' };
   if (c.enabled === false && !c.live) return { tone: 'off', label: 'Disabled' };
   if (c.enabled === null) return { tone: 'warn', label: 'No entry in server config' };
@@ -57,7 +58,7 @@ export function connection(c, nowSec) {
   return {
     connected: age < SESSION_WINDOW,
     text: `Handshake ${ago(c.latest_handshake, nowSec)}`,
-    remaining: Math.max(0, 1 - age / SESSION_WINDOW),
+    remaining: Math.min(1, Math.max(0, 1 - age / SESSION_WINDOW)), // clamp: clocks can disagree
   };
 }
 
@@ -128,8 +129,15 @@ export function errorText(err) {
     case 'exists': return 'A client with that name already exists.';
     case 'invalid_request': return 'The host refused the request. The name or client is not one wgmanager can manage.';
     case 'host_misconfigured': return 'The host setup has a problem. Run wgmanager-host doctor on the server for details.';
-    case 'unreachable': return 'Cannot reach the host over SSH.';
-    case 'timeout': return 'The host did not answer within 60 seconds. The change may or may not have happened, so the list was refreshed instead of trying again.';
+    case 'unreachable': return 'Cannot reach the server over SSH. Check that it is running and that SSH_HOST and SSH_PORT are right.';
+    case 'key_refused': return "The server answered but refused this app's key. Run the install command on the server (step 1).";
+    case 'bad_response': return 'The helper on the server sent an answer wgmanager does not understand. Check that the helper is installed and up to date.';
+    case 'csrf': return 'The request was refused for safety. Reload the page and try again.';
+    case 'timeout': return 'The server did not answer in time. If this was a change, it may or may not have happened; it was not retried.';
+    case 'rate_limited': return 'Too many failed attempts. Wait 15 minutes and try again.';
+    case 'unauthenticated': return 'Your session ended. Sign in again.';
+    case 'server_error': return 'WG Manager hit an unexpected error. Details are in the container log (docker logs wgmanager).';
+    case 'no_route': return 'WG Manager did not recognise that request. Reload the page; the app may have been updated.';
     case 'hostkey_changed': return "The server's SSH identity is not the one you confirmed, so wgmanager stopped talking to it. If you rebuilt the server or regenerated its SSH keys, confirm the new identity in Settings. If not, something else may be answering in its place.";
     case 'hostkey_unconfirmed': return "Confirm the server's identity first.";
     case 'hostkey_mismatch': return 'The server presented a different key while you were confirming. Test the connection again.';

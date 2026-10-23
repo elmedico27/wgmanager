@@ -115,7 +115,7 @@
 
           <div class="flex justify-end gap-2">
             <button type="button" class="btn btn-ghost" onclick={close} disabled={busy}>Cancel</button>
-            <button type="submit" class="btn btn-primary" disabled={busy || !up || !name || !!problem}>Add client</button>
+            <button type="submit" class="btn btn-primary" disabled={busy || !up || !name || !!problem || !!app.hostError}>Add client</button>
           </div>
         </form>
       {/if}

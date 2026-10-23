@@ -1,6 +1,7 @@
 <script>
-  import { login } from '../lib/store.svelte.js';
+  import { app, login } from '../lib/store.svelte.js';
   import { MOCK } from '../lib/api.js';
+  import { errorText } from '../lib/format.js';
 
   let password = $state('');
   let error = $state(null);
@@ -14,7 +15,7 @@
     const r = await login(password);
     busy = false;
     if (!r.ok) {
-      error = r.error.code === 'rate_limited' ? 'Too many attempts. Wait a minute and try again.' : 'That password is not right.';
+      error = r.error.code === 'bad_login' ? 'That password is not right.' : errorText(r.error);
       password = '';
     }
   }
@@ -33,6 +34,9 @@
     </div>
 
     <form class="flex flex-col gap-4 rounded-2xl bg-surface p-6 shadow-lift" onsubmit={submit}>
+      {#if app.signedOutNotice}
+        <p class="rounded-lg bg-surface-2 px-3 py-2.5 text-sm text-ink-2">{app.signedOutNotice}</p>
+      {/if}
       <div class="flex flex-col gap-1.5">
         <label for="login-password" class="text-sm font-medium">Admin password</label>
         <!-- svelte-ignore a11y_autofocus -->

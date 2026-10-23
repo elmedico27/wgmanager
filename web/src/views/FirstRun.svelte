@@ -6,19 +6,27 @@
   import { errorText } from '../lib/format.js';
 
   let testing = $state(false);
-  let result = $state(null);
+  let pinError = $state(null);
   let rejected = $state(false);
 
   let ssh = $derived(app.settings?.ssh);
-  let needsConfirm = $derived(app.hostError?.code === 'hostkey_unconfirmed' && app.hostKey?.offered);
+  let code = $derived(app.hostError?.code);
+  let needsConfirm = $derived(code === 'hostkey_unconfirmed' && !!app.hostKey?.offered);
+  // Why this screen is showing, in words. Shown on arrival and after each test.
+  let problem = $derived(
+    code === 'hostkey_unconfirmed' && !app.hostKey?.offered
+      ? `Nothing answered on SSH at ${ssh?.host}:${ssh?.port}. Check that the server is on and that SSH_HOST and SSH_PORT are right, then test again.`
+      : code === 'key_refused'
+        ? "The server answered but does not accept this app's key yet. Run the command in step 1, then test again."
+        : null,
+  );
 
   async function test() {
     testing = true;
-    result = null;
+    pinError = null;
     rejected = false;
-    const r = await connect();
+    await connect();
     testing = false;
-    if (r && !r.ok && r.error.code !== 'hostkey_unconfirmed') result = errorText(r.error);
   }
 
   async function confirmKey() {
@@ -26,7 +34,7 @@
     const r = await api.pinHostKey(app.hostKey.offered.fingerprint);
     testing = false;
     if (!r.ok) {
-      result = errorText(r.error);
+      pinError = errorText(r.error);
       return;
     }
     await test();
@@ -81,25 +89,36 @@
               {#if rejected}
                 <p class="text-off">
                   Don't continue. Check that SSH_HOST and SSH_PORT point at your WireGuard server. If they do, something
-                  else may be answering in its place.
+                  else may be answering in its place. After fixing the settings, recreate the container and check again.
                 </p>
               {/if}
+              {#if pinError}<p class="text-off">{pinError}</p>{/if}
               <div class="flex flex-wrap gap-2">
                 <button class="btn btn-primary" onclick={confirmKey} disabled={testing}><Icon name="check" size={16} /> It matches</button>
-                <button class="btn btn-ghost" onclick={() => (rejected = true)} disabled={testing}>It doesn't match</button>
+                {#if rejected}
+                  <button class="btn btn-ghost" onclick={test} disabled={testing}>Check again</button>
+                {:else}
+                  <button class="btn btn-ghost" onclick={() => (rejected = true)} disabled={testing}>It doesn't match</button>
+                {/if}
               </div>
               <p class="text-xs text-ink-3">
                 Lost the installer output? Run <code class="font-mono">ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code> on the server.
               </p>
             </div>
           {:else}
+            {#if problem && !testing}
+              <div class="flex gap-2 rounded-lg border border-off/40 bg-off-soft px-3 py-2.5 text-sm" role="status">
+                <Icon name="alert" size={16} class="mt-0.5 shrink-0 text-off" />
+                <span>{problem}</span>
+              </div>
+            {/if}
             <div class="flex flex-wrap items-center gap-3">
               <button class="btn btn-primary" onclick={test} disabled={testing}>
                 {#if testing}<span class="size-4 animate-spin rounded-full border-2 border-current border-t-transparent"></span>{/if}
                 Test connection
               </button>
-              {#if result}
-                <span class="flex items-center gap-1.5 text-sm text-off"><Icon name="alert" size={16} /> {result}</span>
+              {#if testing}
+                <span class="text-sm text-ink-3">Checking… this can take a few seconds.</span>
               {/if}
             </div>
           {/if}
