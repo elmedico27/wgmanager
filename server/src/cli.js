@@ -1,6 +1,6 @@
 // Admin commands, run inside the container:
-//   docker exec wgmanager node /opt/wgmanager/server/src/cli.js reset-password
-// (the image will provide a shorter wrapper; path unverified until the Dockerfile).
+//   docker exec wgmanager wgmanager reset-password
+// (`wgmanager` is a small wrapper in the image: docker/wgmanager).
 
 import { loadConfig } from './config.js';
 import { Store } from './store.js';
@@ -17,6 +17,6 @@ if (cmd === 'reset-password') {
   console.log(`Setup code: ${code}`);
   console.log('Open the web UI and enter this code to choose a new password.');
 } else {
-  console.log('Usage: cli.js reset-password');
+  console.log('Usage: wgmanager reset-password');
   process.exit(2);
 }

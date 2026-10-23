@@ -615,6 +615,45 @@ def check_sshd(ctx, rep):
              % (port, " (%s)" % listen if listen else ""))
 
 
+def host_fingerprints(ctx):
+    """Fingerprints of the ED25519 host keys sshd actually uses.
+
+    `sshd -T` prints one "hostkey <path>" line per HostKey (dump_cfg_strarray in
+    OpenSSH's servconf.c; seen on 9.6p1). The web app pins the server's ED25519
+    key, so that is the one the admin compares. The fingerprint is OpenSSH's
+    SHA256 form: base64 of the SHA-256 of the key blob, without padding (the
+    same value `ssh-keygen -lf` prints)."""
+    code, parsed, _ = ctx.sshd_effective()
+    if code != 0:
+        return None
+    found = []
+    for path in parsed.get("hostkey", []):
+        text = (read_bytes(ctx.p(path + ".pub")) or b"").decode("ascii", "replace").split()
+        if len(text) >= 2 and text[0] == "ssh-ed25519":
+            try:
+                blob = base64.b64decode(text[1], validate=True)
+            except ValueError:
+                continue
+            digest = base64.b64encode(hashlib.sha256(blob).digest()).decode().rstrip("=")
+            found.append("SHA256:" + digest)
+    return found
+
+
+def check_host_key(ctx, rep):
+    rep.section("server identity")
+    found = host_fingerprints(ctx)
+    if found is None:
+        rep.info("could not read sshd's host keys (sshd -T failed; see the sshd section)")
+    elif found:
+        for fp in found:
+            rep.ok("ED25519 host key fingerprint: %s (compare it in the web UI)" % fp)
+    else:
+        rep.warn("sshd has no ED25519 host key; the web app only accepts an ED25519 server key",
+                 ["sudo ssh-keygen -A   (creates any missing default host keys)",
+                  "make sure sshd uses /etc/ssh/ssh_host_ed25519_key (no HostKey lines, or one for it)",
+                  "then: sudo systemctl reload ssh"])
+
+
 def check_authorized_keys(ctx, rep):
     rep.section("Authorized key")
     if secure_path(ctx, rep, CONFIG_DIR, "config directory", want_dir=True,
@@ -1241,6 +1280,12 @@ def install(ctx, args, out, interactive=False, input_fn=input):
         out.write("\nInstalled.\n")
     rep = doctor(ctx)
     render(rep, out, False)
+    # Last line on purpose: the web UI asks the admin to compare this value.
+    found = host_fingerprints(ctx)
+    if found:
+        out.write("\nServer fingerprint for the web UI: %s (ED25519)\n" % found[0])
+    else:
+        out.write("\nNo ED25519 server fingerprint found; see 'server identity' above.\n")
     return 1 if rep.failed else 0
 
 
@@ -1406,6 +1451,7 @@ def doctor(ctx):
     check_account(ctx, rep)
     check_sudo(ctx, rep)
     check_sshd(ctx, rep)
+    check_host_key(ctx, rep)
     check_authorized_keys(ctx, rep)
     check_end_to_end(ctx, rep)
     return rep

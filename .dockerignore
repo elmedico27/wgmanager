@@ -1,0 +1,12 @@
+# Only what the Dockerfile copies matters; keep everything else out of the build context.
+.git
+**/node_modules
+web/dist
+web/dist-preview
+host/tests
+**/__pycache__
+docs
+*.md
+!host/README.md
+.env
+.env.*

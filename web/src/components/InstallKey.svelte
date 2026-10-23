@@ -5,7 +5,8 @@
 
   let s = $derived(app.settings);
   // The host tool ships inside the image; copy it out as root, then run it.
-  // Paths unverified until the Dockerfile exists (image layout /opt/wgmanager).
+  // /opt/wgmanager/host is where the Dockerfile puts it; `wgmanager` is the
+  // container_name in compose.yaml.
   const TOOL_DIR = '/usr/local/lib/wgmanager';
   let command = $derived(
     s

@@ -65,7 +65,7 @@
     </form>
 
     <p class="text-center text-xs text-rail-ink-2">
-      Forgot it later? A reset command on the server prints a new setup code.
+      Forgot it later? <code class="font-mono">docker exec wgmanager wgmanager reset-password</code> on the server prints a new setup code.
     </p>
   </div>
 </div>
