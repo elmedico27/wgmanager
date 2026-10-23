@@ -1,4 +1,5 @@
 <script>
+  import { copyText, COPY_FAILED } from '../lib/clipboard.js';
   import Icon from '../components/Icon.svelte';
   import { app, connect, PROTOCOL, notify } from '../lib/store.svelte.js';
   import { errorText } from '../lib/format.js';
@@ -17,12 +18,7 @@
   }
 
   async function copy(text) {
-    try {
-      await navigator.clipboard.writeText(text);
-      notify('Copied');
-    } catch {
-      notify('Copy was blocked. Select the text and copy it instead.');
-    }
+    notify((await copyText(text)) ? 'Copied' : COPY_FAILED);
   }
 </script>
 

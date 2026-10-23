@@ -1,5 +1,6 @@
 <script>
   // The app's own SSH public key and the exact install command for the host.
+  import { copyText, COPY_FAILED } from '../lib/clipboard.js';
   import Icon from './Icon.svelte';
   import { app, notify } from '../lib/store.svelte.js';
 
@@ -15,12 +16,7 @@
   );
 
   async function copy(text, what) {
-    try {
-      await navigator.clipboard.writeText(text);
-      notify(`${what} copied`);
-    } catch {
-      notify('Copy was blocked. Select the text and copy it instead.');
-    }
+    notify((await copyText(text)) ? `${what} copied` : COPY_FAILED);
   }
 </script>
 
