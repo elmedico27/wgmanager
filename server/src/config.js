@@ -41,6 +41,9 @@ export function loadConfig(env = process.env) {
     dataDir: env.DATA_DIR || '/data',
     uiDir: env.UI_DIR || path.resolve(here, '../../web/dist'),
     helperMode: env.HELPER_MODE || 'ssh', // ssh | mock
+    // Where the shared SSH connection's socket lives (tmpfs in the container).
+    // Empty turns connection reuse off.
+    controlDir: env.SSH_CONTROL_DIR === undefined ? '/tmp/wgm-ssh' : env.SSH_CONTROL_DIR || null,
     trustProxy: env.TRUST_PROXY === '1' || env.TRUST_PROXY === 'true',
     timeouts: { readMs: 20000, mutationMs: 60000, connectSec: 10 },
     session: { idleMs: 6 * 3600 * 1000, absoluteMs: 7 * 24 * 3600 * 1000 },

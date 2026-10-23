@@ -15,6 +15,7 @@ only; the one dependency is `qrcode-generator` (no dependencies of its own).
 | `DATA_DIR` | `/data` | app key, pinned server key, password hash, setup code |
 | `TRUST_PROXY` | off | set `1` behind an HTTPS reverse proxy (X-Forwarded-For/-Proto) |
 | `HELPER_MODE` | `ssh` | `mock` = fake data for development |
+| `SSH_CONTROL_DIR` | `/tmp/wgm-ssh` | socket folder for the shared SSH connection (one login instead of one per request); empty turns sharing off |
 
 ## Data volume
 
