@@ -17,7 +17,7 @@
     "qrcode-generator": "2.0.4",
     "svelte": "5.57.2",
     "tailwindcss": "4.3.3",
-    "vite": "8.3.3",
+    "vite": "8.3.4",
     "vite-plugin-singlefile": "2.3.3"
   }
 }
