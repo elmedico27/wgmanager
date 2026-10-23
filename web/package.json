@@ -1,0 +1,22 @@
+{
+  "name": "wgmanager-web",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:preview": "vite build --mode preview"
+  },
+  "devDependencies": {
+    "@fontsource/ibm-plex-mono": "5.3.0",
+    "@fontsource/ibm-plex-sans": "5.3.0",
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@tailwindcss/vite": "4.3.3",
+    "qrcode": "1.5.4",
+    "svelte": "5.57.2",
+    "tailwindcss": "4.3.3",
+    "vite": "8.3.3",
+    "vite-plugin-singlefile": "2.3.3"
+  }
+}
