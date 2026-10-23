@@ -24,6 +24,17 @@
 
 {#if app.phase === 'loading'}
   <div class="grid min-h-dvh place-items-center text-ink-3">Loading…</div>
+{:else if app.phase === 'offline'}
+  <div class="gutter grid min-h-dvh place-items-center py-10">
+    <div class="flex max-w-sm flex-col items-center gap-3 text-center">
+      <h1 class="text-lg font-semibold">WG Manager is not answering</h1>
+      <p class="text-sm text-ink-2">
+        The page loaded, but the WG Manager server did not respond. It may be restarting. Check that the container is
+        running, then try again.
+      </p>
+      <button class="btn btn-primary" onclick={boot}>Try again</button>
+    </div>
+  </div>
 {:else if app.phase === 'setup'}
   <Setup />
 {:else if app.phase === 'login'}

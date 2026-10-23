@@ -27,7 +27,8 @@
       pwError = {
         bad_login: 'The current password is not right.',
         weak_password: `Use at least ${MIN_PASSWORD} characters.`,
-        rate_limited: 'Too many attempts. Wait a minute and try again.',
+        rate_limited: 'Too many failed attempts. Wait 15 minutes and try again.',
+        network: 'The WG Manager server did not answer.',
       }[r.error.code] ?? 'Could not change the password.';
     }
   }

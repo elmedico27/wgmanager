@@ -5,7 +5,8 @@
   import StatusDot from './StatusDot.svelte';
   import SessionMeter from './SessionMeter.svelte';
   import ConfigView from './ConfigView.svelte';
-  import { app, mutate, notify } from '../lib/store.svelte.js';
+  import { app, mutate, notify, isFlagged } from '../lib/store.svelte.js';
+  import { tick } from 'svelte';
   import { bytes, status, ago, date, errorText } from '../lib/format.js';
 
   let client = $derived(app.list?.clients.find((c) => c.name === app.selected) ?? null);
@@ -21,6 +22,20 @@
     name;
     confirming = null;
     lastError = null;
+  });
+
+  // Focus moves into the panel when it opens and back to where it was when it closes.
+  let closeButton = $state(null);
+  let returnFocus = null;
+  $effect(() => {
+    if (name) {
+      returnFocus ??= document.activeElement;
+      tick().then(() => closeButton?.focus());
+    } else if (returnFocus) {
+      const el = returnFocus;
+      returnFocus = null;
+      if (el.isConnected) el.focus();
+    }
   });
 
   function close() {
@@ -82,14 +97,14 @@
         <h2 class="truncate text-lg font-semibold">{name}</h2>
         <div class="text-sm text-ink-2">{st?.label ?? 'No longer on the host'}</div>
       </div>
-      <button class="grid size-9 place-items-center rounded-lg text-ink-2 hover:bg-sunken" onclick={close} aria-label="Close"><Icon name="x" /></button>
+      <button bind:this={closeButton} class="grid size-9 place-items-center rounded-lg text-ink-2 hover:bg-sunken" onclick={close} aria-label="Close"><Icon name="x" /></button>
     </header>
 
     <div class="flex flex-1 flex-col gap-6 overflow-y-auto px-5 py-5">
       {#if !client}
         <p class="text-sm text-ink-2">This client is not in the latest list from the host.</p>
       {:else}
-        {#if app.flagged[name]}
+        {#if isFlagged(name)}
           <div class="rounded-lg border border-warn-line bg-warn-soft px-3 py-2.5 text-sm">
             The last change to this client may be incomplete. See the warning at the top of the page.
           </div>
@@ -149,7 +164,12 @@
         <section class="flex flex-col gap-3">
           <h3 class="text-sm font-semibold">Manage</h3>
 
-          {#if pending}
+          {#if app.hostError && !pending}
+            <p class="rounded-xl border border-line bg-surface px-4 py-3 text-sm text-ink-2">
+              Changes are paused until WG Manager can reach and trust the server again. See the message on the
+              Clients page.
+            </p>
+          {:else if pending}
             <div class="flex items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 text-sm">
               <span class="size-4 animate-spin rounded-full border-2 border-accent border-t-transparent"></span>
               <span>

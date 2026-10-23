@@ -4,7 +4,10 @@
 // backend owns: login, first run (helper unreachable), SSH timeout.
 
 import { run, scenarios as helperScenarios } from './helper.js';
-import QRCode from 'qrcode';
+import qrcode from 'qrcode-generator';
+
+// As in the real backend: UTF-8, not the library's 8-bit truncation.
+qrcode.stringToBytes = (s) => Array.from(new TextEncoder().encode(s));
 
 export const appScenarios = {
   firstRun: false,    // app key not yet installed on the host: SSH is refused
@@ -13,7 +16,12 @@ export const appScenarios = {
   noPassword: false,  // fresh install: no admin password yet, setup code in the log
   hostKeyPinned: true,    // server's SSH host key confirmed by the admin
   hostKeyChanged: false,  // the server now presents a different host key than the pinned one
+  serverOffline: false,   // SSH to the host fails (server down, rebooting)
+  sessionExpired: false,  // next request finds the session gone
 };
+
+// Unacknowledged failure warnings, as the backend keeps them in failures.json.
+let failures = [];
 
 // Fake ED25519 host-key fingerprints in OpenSSH's SHA256 format.
 const OFFERED_FP = 'SHA256:q3Vt8mK2pXw7LhN4bRz9cYdF1sJ6uE0aTgW5oQiHnBk';
@@ -40,8 +48,12 @@ const appError = (code, message) => ({ ok: false, error: { code, message } });
 async function helper(request) {
   // Order matters: the host key is checked before the app's key is offered.
   if (appScenarios.hostKeyChanged) return appError('hostkey_changed', 'the server presented a different host key');
+  if (appScenarios.serverOffline) {
+    await new Promise((r) => setTimeout(r, 1500));
+    return appError('unreachable', 'the server did not answer on the SSH port');
+  }
   if (!appScenarios.hostKeyPinned) return appError('hostkey_unconfirmed', 'confirm the server identity first');
-  if (appScenarios.firstRun) return appError('unreachable', 'the host refused the app key');
+  if (appScenarios.firstRun) return appError('key_refused', "the server refused the app's key");
   const { body } = await run(request);
   return body;
 }
@@ -63,8 +75,10 @@ export async function handle(method, path, body) {
       return { ok: true, data: { authenticated: authenticated && !appScenarios.noPassword, passwordSet: !appScenarios.noPassword, hint: PREVIEW_PASSWORD_HINT } };
     }
     if (method === 'POST') {
+      if (appScenarios.noPassword) return appError('no_password', 'no password is set; use the setup code');
       if (!body?.password) return appError('bad_login', 'wrong password');
       authenticated = true;
+      appScenarios.sessionExpired = false;
       return { ok: true, data: { authenticated } };
     }
     if (method === 'DELETE') {
@@ -72,6 +86,7 @@ export async function handle(method, path, body) {
       return { ok: true, data: { authenticated } };
     }
   }
+  if (appScenarios.sessionExpired) authenticated = false;
   if (!authenticated) return appError('unauthenticated', 'sign in first');
 
   if (path === '/api/settings') return { ok: true, data: settings };
@@ -99,6 +114,12 @@ export async function handle(method, path, body) {
     if (!body?.password || body.password.length < MIN_PASSWORD) return appError('weak_password', 'too short');
     return { ok: true, data: { changed: true, otherSessionsSignedOut: true } };
   }
+  if (path === '/api/failures' && method === 'GET') return { ok: true, data: { failures } };
+  const fm = path.match(/^\/api\/failures\/(.+)$/);
+  if (fm && method === 'DELETE') {
+    failures = failures.filter((f) => f.id !== decodeURIComponent(fm[1]));
+    return { ok: true, data: { acknowledged: fm[1] } };
+  }
   if (path === '/api/version') return helper('version');
   if (path === '/api/clients' && method === 'GET') return helper('list');
   if (path === '/api/clients' && method === 'POST') return mutation(`add ${body.name}`);
@@ -113,21 +134,39 @@ export async function handle(method, path, body) {
 }
 
 async function mutation(request) {
+  let body;
   if (appScenarios.sshTimeout && !appScenarios.firstRun) {
     appScenarios.sshTimeout = false;
     // The real helper may still finish; the app never retries.
     run(request);
     await new Promise((r) => setTimeout(r, 2500));
-    return appError('timeout', 'no answer from the host within 60 seconds');
+    body = appError('timeout', 'no answer from the host within 60 seconds');
+  } else {
+    body = await helper(request);
   }
-  return helper(request);
+  // Like the backend: exit 5 and timeouts become warnings every browser sees.
+  if (!body.ok && (body.error.code === 'backend_failed' || body.error.code === 'timeout')) {
+    const [action, client] = request.split(' ');
+    failures = [...failures, { id: `f${Date.now()}`, action, client, at: Date.now(), error: body.error }];
+  }
+  return body;
 }
 
 /** QR for a client config, rendered as SVG. The real backend serves
  *  /api/clients/:name/qrcode.svg; here we build an object URL. */
-export async function qrUrl(name) {
+export async function download(name) {
   const res = await helper(`get-config ${name}`);
-  if (!res.ok) throw res.error;
-  const svg = await QRCode.toString(res.data.config, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' });
-  return URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+  if (!res.ok) return res;
+  return { ok: true, blob: new Blob([res.data.config], { type: 'text/plain' }) };
+}
+
+export async function qr(name) {
+  const res = await helper(`get-config ${name}`);
+  if (!res.ok) return res;
+  // Same library and settings as the real backend.
+  const qr = qrcode(0, 'M');
+  qr.addData(res.data.config, 'Byte');
+  qr.make();
+  const svg = qr.createSvgTag({ cellSize: 4, margin: 16, scalable: true });
+  return { ok: true, url: URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' })) };
 }

@@ -18,7 +18,8 @@
     bad_code: 'That setup code is not right. Copy it again from the container log; a new one is printed each time the container starts.',
     weak_password: `Use at least ${MIN_PASSWORD} characters.`,
     already_set: 'A password is already set. Sign in instead.',
-    rate_limited: 'Too many attempts. Wait a minute and try again.',
+    rate_limited: 'Too many failed attempts. Wait 15 minutes and try again.',
+    network: 'The WG Manager server did not answer. Check that the container is running.',
   };
 
   async function submit(e) {
@@ -51,7 +52,8 @@
         <!-- svelte-ignore a11y_autofocus -->
         <input id="setup-code" class="field font-mono tracking-wider uppercase" bind:value={code} autocomplete="off" spellcheck="false" autofocus disabled={busy} />
         <span class="text-xs text-ink-3">
-          Printed in the container log when it starts. In Arcane, open the wgmanager container and look at Logs.
+          Printed in the container's log when it starts. Run <code class="font-mono">docker logs wgmanager</code> on the
+          server, or open the container's logs in Arcane, Portainer or a similar tool.
           {#if MOCK}<br />Preview code: <span class="font-mono">K7QM-4XTD-92PW</span>{/if}
         </span>
       </div>

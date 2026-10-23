@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:real": "vite --mode real",
     "build": "vite build",
     "build:preview": "vite build --mode preview"
   },
@@ -13,7 +14,7 @@
     "@fontsource/ibm-plex-sans": "5.3.0",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
     "@tailwindcss/vite": "4.3.3",
-    "qrcode": "1.5.4",
+    "qrcode-generator": "2.0.4",
     "svelte": "5.57.2",
     "tailwindcss": "4.3.3",
     "vite": "8.3.3",

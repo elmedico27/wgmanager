@@ -29,6 +29,8 @@
         { key: 'firstRun', label: 'First run (key not installed)', reconnect: true, app: true },
         { key: 'noPassword', label: 'Fresh install (no password yet)', reboot: true, app: true },
         { key: 'hostKeyChanged', label: 'Server identity changed', reconnect: true, app: true },
+        { key: 'serverOffline', label: 'Server offline', reconnect: true, app: true },
+        { key: 'sessionExpired', label: 'Session expires', app: true },
       ],
     },
     {
@@ -66,9 +68,9 @@
   }
 </script>
 
+<!-- Bottom-left (beside the sidebar) so the client panel never covers it. -->
 <div
-  class="fixed right-4 bottom-20 z-30 flex flex-col items-end gap-2 md:bottom-4"
-  style="right: max(16px, env(safe-area-inset-right, 0px))"
+  class="fixed bottom-20 left-4 z-[60] flex flex-col items-start gap-2 md:bottom-4 md:left-64"
 >
   {#if open}
     <div

@@ -2,7 +2,7 @@
   import Icon from './Icon.svelte';
   import StatusDot from './StatusDot.svelte';
   import SessionMeter from './SessionMeter.svelte';
-  import { app } from '../lib/store.svelte.js';
+  import { app, isFlagged } from '../lib/store.svelte.js';
   import { bytes, status, connection, unmanageableReason, isSafeName } from '../lib/format.js';
 
   let { client } = $props();
@@ -10,7 +10,7 @@
   let st = $derived(status(client, ifaceUp));
   let conn = $derived(connection(client, app.now));
   let pending = $derived(app.pending[client.name]);
-  let flagged = $derived(app.flagged[client.name]);
+  let flagged = $derived(isFlagged(client.name));
   let selected = $derived(app.selected === client.name);
   const pendingWord = { enable: 'Enabling', disable: 'Disabling', remove: 'Deleting', add: 'Adding' };
 </script>
@@ -21,7 +21,7 @@
       hover:-translate-y-px hover:shadow-lift
       {selected ? 'border-accent ring-2 ring-accent-soft' : flagged ? 'border-warn-line' : 'border-line hover:border-ink-3/50'}"
     onclick={() => (app.selected = client.name)}
-    aria-label="Open {client.name}"
+    aria-haspopup="dialog"
   >
     <div class="flex items-start gap-3">
       <div class="pt-[7px]"><StatusDot tone={st.tone} pulse={conn?.connected} /></div>

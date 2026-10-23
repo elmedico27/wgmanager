@@ -23,11 +23,9 @@
   async function loadQr() {
     loading = true;
     error = null;
-    try {
-      qr = await api.qrUrl(name);
-    } catch (e) {
-      error = errorText(e);
-    }
+    const r = await api.qr(name);
+    if (r.ok) qr = r.url;
+    else error = errorText(r.error);
     loading = false;
   }
 
@@ -40,22 +38,23 @@
     loading = false;
   }
 
+  let downloading = $state(false);
   async function download() {
-    if (!MOCK) {
-      location.href = api.downloadUrl(name);
+    // Fetched first, so a failure shows here instead of navigating away.
+    downloading = true;
+    const r = await api.download(name);
+    downloading = false;
+    if (!r.ok) {
+      notify(`Could not download ${name}.conf. ${errorText(r.error)}`);
       return;
     }
-    let body = text;
-    if (!body) {
-      const r = await api.config(name);
-      if (!r.ok) return (error = errorText(r.error));
-      body = r.data.config;
-    }
+    const url = URL.createObjectURL(r.blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([body], { type: 'text/plain' }));
+    a.href = url;
     a.download = `${name}.conf`;
     a.click();
-    notify('Download started. Some preview viewers block downloads; the real app sends the file from the server.');
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    if (MOCK) notify('Download started. Some preview viewers block downloads; the real app sends the file from the server.');
   }
 
   async function copy() {
@@ -82,8 +81,8 @@
       <Icon name={mode === 'text' ? 'eyeoff' : 'eye'} size={16} />
       {mode === 'text' ? 'Hide config' : 'View config'}
     </button>
-    <button class="btn btn-ghost" onclick={download}>
-      <Icon name="download" size={16} /> Download {name}.conf
+    <button class="btn btn-ghost" onclick={download} disabled={downloading}>
+      <Icon name="download" size={16} /> {downloading ? 'Preparing…' : `Download ${name}.conf`}
     </button>
   </div>
 
@@ -92,7 +91,10 @@
       {#if loading}
         <div class="grid h-40 place-items-center text-sm text-ink-3">Loading…</div>
       {:else if error}
-        <div class="text-sm text-off">{error}</div>
+        <div class="flex flex-col items-start gap-2 text-sm">
+          <span class="text-off">{error}</span>
+          <button class="btn btn-ghost h-8" onclick={() => (mode === 'qr' ? loadQr() : loadText())}>Try again</button>
+        </div>
       {:else if mode === 'qr' && qr}
         <div class="flex flex-col items-center gap-2">
           <img src={qr} alt="QR code with the WireGuard config for {name}" class="aspect-square w-full max-w-64 rounded-lg bg-white p-2" />
