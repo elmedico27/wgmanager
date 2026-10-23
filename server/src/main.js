@@ -9,9 +9,26 @@ import { SshTransport, MockTransport } from './transport.js';
 import { createApp } from './app.js';
 import { loadUi } from './http.js';
 
-const cfg = loadConfig();
+let cfg;
+try {
+  cfg = loadConfig();
+} catch (e) {
+  console.error(`wgmanager: bad setting: ${e.message}`);
+  process.exit(1);
+}
 const store = new Store(cfg.dataDir);
-store.init();
+try {
+  store.init();
+  store.write('.write-test', 'ok\n');
+  store.remove('.write-test');
+} catch (e) {
+  const uid = process.getuid?.();
+  console.error(
+    `wgmanager: cannot write to ${cfg.dataDir} (${e.code || e.message}). The data volume must be writable by uid ${uid}.` +
+      ` To fix an existing volume: docker run --rm -v wgmanager_wgmanager-data:/data alpine chown -R ${uid}:${uid} /data`,
+  );
+  process.exit(1);
+}
 
 let transport;
 if (cfg.helperMode === 'mock') {

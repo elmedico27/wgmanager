@@ -36,7 +36,13 @@ GOOD_SSHD = "\n".join([
     "kbdinteractiveauthentication no", "authenticationmethods publickey",
     "permittty no", "x11forwarding no", "allowagentforwarding no",
     "allowtcpforwarding no", "permittunnel false", "disableforwarding yes",
+    "hostkey /etc/ssh/ssh_host_rsa_key", "hostkey /etc/ssh/ssh_host_ed25519_key",
 ]) + "\n"
+# A throwaway test key and the fingerprint `ssh-keygen -lf` printed for it
+# (OpenSSH 9.6p1): "256 SHA256:eIVb... root@example (ED25519)".
+HOST_ED25519_PUB = ("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHxrnixNJpeHE5QBL9RVQ/eWpq5mhrXjRgn6SDFcBT5I "
+                    "root@example\n")
+HOST_ED25519_FP = "SHA256:eIVbQu4beKQMaCDjINImmyWR8Rsp0gxgycTnPxlDQxs"
 GOOD_SUDO_L = ("Matching Defaults entries for wgweb on host:\n    env_keep+=SSH_ORIGINAL_COMMAND\n\n"
                "User wgweb may run the following commands on host:\n"
                "    (root) NOPASSWD: /usr/local/sbin/wgmanager-helper --ssh\n")
@@ -88,6 +94,9 @@ class World:
 
         self.mkdir("etc")
         self.write("etc/os-release", 'PRETTY_NAME="Debian GNU/Linux 13"\nID=debian\n')
+        self.mkdir("etc/ssh")
+        self.write("etc/ssh/ssh_host_ed25519_key.pub", HOST_ED25519_PUB)
+        self.write("etc/ssh/ssh_host_rsa_key.pub", "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC7 root@example\n")
         self.mkdir("usr/local/sbin")
         self.write(wh.HELPER_PATH, slurp(os.path.join(HOST_DIR, "wgmanager-helper")), 0o755)
         self.write(wh.SUDOERS_PATH, slurp(os.path.join(HOST_DIR, "etc/sudoers.d/wgmanager")), 0o440)
@@ -630,6 +639,37 @@ class HelperUnitTests(unittest.TestCase):
         parsed = wh.parse_sshd_t("Port 22\nAllowUsers a b\nport 2222\n")
         self.assertEqual(parsed["port"], ["22", "2222"])
         self.assertEqual(parsed["allowusers"], ["a b"])
+
+
+
+class HostKeyTests(unittest.TestCase):
+    """The ED25519 fingerprint doctor and install show for the web UI's identity check."""
+
+    def setUp(self):
+        self.w = World(self)
+
+    def test_fingerprint_matches_ssh_keygen(self):
+        self.assertEqual(wh.host_fingerprints(self.w.ctx), [HOST_ED25519_FP])
+
+    def test_doctor_reports_fingerprint(self):
+        rep = wh.doctor(self.w.ctx)
+        texts = [t for (_s, lvl, t, _f) in rep.items if lvl == "ok"]
+        self.assertTrue(any(HOST_ED25519_FP in t for t in texts))
+
+    def test_no_ed25519_key_warns(self):
+        self.w.cmds[("sshd", "-T", "-C", PROBE)] = ok(GOOD_SSHD.replace("hostkey /etc/ssh/ssh_host_ed25519_key\n", ""))
+        rep = wh.doctor(self.w.ctx)
+        warns = [t for (_s, lvl, t, _f) in rep.items if lvl == "warn"]
+        self.assertTrue(any("no ED25519 host key" in t for t in warns))
+        self.assertEqual(wh.host_fingerprints(self.w.ctx), [])
+
+    def test_missing_pub_file_is_not_a_crash(self):
+        os.unlink(self.w.real("/etc/ssh/ssh_host_ed25519_key.pub"))
+        self.assertEqual(wh.host_fingerprints(self.w.ctx), [])
+
+    def test_sshd_t_failure_gives_none(self):
+        self.w.cmds[("sshd", "-T", "-C", PROBE)] = (255, "", "sshd: bad config")
+        self.assertIsNone(wh.host_fingerprints(self.w.ctx))
 
 
 if __name__ == "__main__":

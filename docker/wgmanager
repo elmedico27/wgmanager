@@ -1,0 +1,4 @@
+#!/bin/sh
+# Admin commands inside the container, e.g.:
+#   docker exec wgmanager wgmanager reset-password
+exec node /opt/wgmanager/server/src/cli.js "$@"

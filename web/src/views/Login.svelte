@@ -48,7 +48,8 @@
     </form>
 
     <p class="text-center text-xs text-rail-ink-2">
-      Forgot it? Run the reset command on the server. It prints a new setup code to the container log.
+      Forgot it? On the server, run <code class="font-mono text-rail-ink">docker exec wgmanager wgmanager reset-password</code>.
+      It signs everyone out and prints a new setup code.
     </p>
   </div>
 </div>

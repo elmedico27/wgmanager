@@ -16,7 +16,8 @@ import test_host
 from test_host import (GOOD_SSHD, GOOD_SUDO_L, LIST_CMD, LIST_JSON, PROBE, VERSION_CMD,
                        VERSION_JSON, World, ok, slurp, wh)
 
-BASE_SSHD = "port 22\nusepam yes\nlistenaddress 0.0.0.0:22\n"
+BASE_SSHD = ("port 22\nusepam yes\nlistenaddress 0.0.0.0:22\n"
+             "hostkey /etc/ssh/ssh_host_rsa_key\nhostkey /etc/ssh/ssh_host_ed25519_key\n")
 DROPIN_TMP_MARK = ".wgmanager-install."
 
 
@@ -711,6 +712,21 @@ class UninstallTests(InstallTestCase):
         code, out = self.go("uninstall", "--yes")
         self.assertEqual(code, 1)
         self.assertIn("must run as root", out)
+
+
+
+class FingerprintLineTests(InstallTestCase):
+    def test_install_ends_with_the_server_fingerprint(self):
+        code, out = self.install()
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out.rstrip("\n").splitlines()[-1],
+                         "Server fingerprint for the web UI: %s (ED25519)" % test_host.HOST_ED25519_FP)
+
+    def test_rerun_with_nothing_to_do_still_prints_it(self):
+        self.install()
+        code, out = self.install()
+        self.assertIn("Nothing to do", out)
+        self.assertIn(test_host.HOST_ED25519_FP, out.rstrip("\n").splitlines()[-1])
 
 
 if __name__ == "__main__":

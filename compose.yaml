@@ -1,0 +1,56 @@
+# WG Manager: a web UI for a PiVPN WireGuard server.
+#
+# Settings: copy .env.example to .env next to this file and adjust it, or set the
+# same variables in your container manager (Arcane: the project's environment).
+# Then:  docker compose up -d
+# The first start prints a setup code:  docker logs wgmanager
+#
+# Never recreate this container while you are connected through the VPN it
+# manages: if something goes wrong you lose the connection you are using.
+
+name: wgmanager
+
+services:
+  wgmanager:
+    image: ghcr.io/elmedico27/wgmanager:${WGM_VERSION:-latest}
+    container_name: wgmanager    # the install command and the reset command use this name
+    restart: unless-stopped
+    environment:
+      SSH_HOST: ${SSH_HOST:-172.29.88.1}   # the WireGuard server as seen from the container
+      SSH_PORT: ${SSH_PORT:-22}
+      SSH_USER: ${SSH_USER:-wgweb}
+      TRUST_PROXY: ${TRUST_PROXY:-0}       # 1 only behind an HTTPS reverse proxy
+    ports:
+      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-7501}:7501"
+    volumes:
+      - wgmanager-data:/data              # app key, confirmed server identity, password hash
+    networks:
+      - wgmanager
+    # Hardening: nothing writable except /data and a small /tmp, no Linux
+    # capabilities, no privilege gain.
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      # Arcane: do not auto-update this container (update notices still show).
+      com.getarcaneapp.arcane.updater: "false"
+
+volumes:
+  wgmanager-data:
+
+networks:
+  wgmanager:
+    name: wgmanager
+    ipam:
+      config:
+        # Small, fixed network. The host tool lets the app's key in only from
+        # here (plus loopback), and SSH_HOST defaults to its gateway, which is
+        # the host itself. Must not overlap your other Docker networks or the
+        # VPN client subnet; if it does, change both values here and pass the
+        # same subnet to the installer with --allow-from.
+        - subnet: 172.29.88.0/29
+          gateway: 172.29.88.1

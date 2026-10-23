@@ -11,14 +11,23 @@ Requirements: a Debian-family host (what PiVPN itself supports) with PiVPN's
 WireGuard install, `python3`, `sudo` and OpenSSH server. Python's standard library
 is all that is used; nothing is downloaded.
 
-`install` runs as root from your checkout of this repository and copies the helper
-out of it, so treat that checkout like any other root-run code: keep it writable
-only by you.
+`install` runs as root and copies the helper from the directory it sits in, so
+treat that directory like any other root-run code: keep it writable only by root
+(or by you, for a checkout of this repository).
 
 ## Install
 
-You need the app's **public** key (never the private one). Then, from a checkout
-of this repository on the host:
+The usual way: the web app's first-run screen shows one command that copies this
+directory out of the running container into `/usr/local/lib/wgmanager` (as root,
+so the copy is root-owned) and runs `install` with the app's **public** key
+filled in:
+
+    sudo docker cp wgmanager:/opt/wgmanager/host/. /usr/local/lib/wgmanager && \
+      sudo python3 /usr/local/lib/wgmanager/wgmanager-host install --pubkey "ssh-ed25519 AAAA... wgmanager@container"
+
+The copy stays there for `doctor`, upgrades (run the same command again) and
+`uninstall`. If you would rather read the code first, use a checkout of this
+repository instead (never the private key):
 
     sudo python3 host/wgmanager-host install --pubkey-file app_key.pub
 
@@ -26,7 +35,11 @@ It prints a plan (what will be created, replaced or left alone), asks before
 changing anything, applies the steps with sshd last, and undoes its own changes
 if any step fails. `--dry-run` shows the plan only; `--yes` skips the question.
 Running it again is safe and only changes what differs, so the same command also
-upgrades the helper.
+upgrades the helper. Its last line is the server's SSH fingerprint
+(`Server fingerprint for the web UI: SHA256:... (ED25519)`): the web app shows the
+fingerprint it sees and asks you to confirm they match before it trusts the
+server. The app only accepts the server's ED25519 host key, which Debian creates
+by default.
 
 By default the key may connect from this machine (`127.0.0.1`, `::1`) and from the
 container network `172.29.88.0/29`, the small subnet the project's compose file
@@ -53,11 +66,14 @@ connect over SSH once first. There, the port and listen addresses come from
 
 ## Check
 
-    sudo python3 host/wgmanager-host doctor
+    sudo python3 /usr/local/lib/wgmanager/wgmanager-host doctor
+
+(or `host/wgmanager-host` from a checkout).
 
 Read-only. Checks the PiVPN files and permissions, the installed helper, the
-`wgweb` account, the sudo rule, the effective sshd settings for that account and
-the authorized key, then makes one real call through the same path the app uses.
+`wgweb` account, the sudo rule, the effective sshd settings for that account, the
+server's ED25519 host key (and its fingerprint) and the authorized key, then makes
+one real call through the same path the app uses.
 Each problem is shown with the exact path and the command that fixes it. Run it
 first if anything misbehaves.
 
