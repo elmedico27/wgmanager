@@ -158,3 +158,6 @@ export function passwordProblem(pw, confirm) {
   if (confirm && pw !== confirm) return 'The two passwords do not match.';
   return null;
 }
+
+// The project's home; used by the sidebar link and the recovery link.
+export const REPO_URL = 'https://github.com/elmedico27/wgmanager';

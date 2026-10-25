@@ -7,7 +7,7 @@
   import { slide } from 'svelte/transition';
   import Icon from './Icon.svelte';
   import { app, acknowledge } from '../lib/store.svelte.js';
-  import { checkText, ACTION_WORDS } from '../lib/format.js';
+  import { checkText, ACTION_WORDS, REPO_URL } from '../lib/format.js';
 
   const BACKUP_DIR = '/var/backups/wgmanager'; // helper default (spec section 9)
   let iface = $derived(app.list?.interface.name ?? 'wg0');
@@ -86,7 +86,7 @@
         <div class="flex flex-wrap items-center gap-2">
           <a
             class="btn btn-ghost"
-            href="https://github.com/elmedico27/wgmanager/blob/master/docs/RECOVERY.md"
+            href="{REPO_URL}/blob/master/docs/RECOVERY.md"
             target="_blank"
             rel="noopener noreferrer">Recovery steps</a>
           <button class="btn btn-primary" onclick={() => acknowledge(f)}><Icon name="check" size={16} /> I've checked this</button>

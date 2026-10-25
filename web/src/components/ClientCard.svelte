@@ -24,7 +24,7 @@
     aria-haspopup="dialog"
   >
     <div class="flex items-start gap-3">
-      <div class="pt-[7px]"><StatusDot tone={st.tone} pulse={conn?.connected} /></div>
+      <div class="pt-[7px]"><StatusDot tone={st.tone} pulse={conn?.connected} label={conn?.connected ? `${st.label}, connected now` : st.label} /></div>
       <div class="min-w-0 flex-1">
         <div class="truncate font-semibold">{client.name}</div>
         <div class="font-mono text-[13px] text-ink-2">{client.address}</div>
@@ -65,7 +65,7 @@
 {:else}
   <div class="flex min-w-0 flex-col gap-3 rounded-xl border border-dashed border-line bg-surface-2 p-4 opacity-75">
     <div class="flex items-start gap-3">
-      <div class="pt-[7px]"><StatusDot tone="warn" /></div>
+      <div class="pt-[7px]"><StatusDot tone="warn" label="Managed outside wgmanager" /></div>
       <div class="min-w-0 flex-1">
         <div class="truncate font-semibold text-ink-2">{client.name}</div>
         <div class="font-mono text-[13px] text-ink-3">{client.address}</div>

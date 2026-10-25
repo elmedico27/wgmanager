@@ -88,7 +88,7 @@
     aria-label="Client {name}"
   >
     <header class="flex items-start gap-3 border-b border-line px-5 pt-5 pb-4">
-      {#if st}<div class="pt-2"><StatusDot tone={st.tone} /></div>{/if}
+      {#if st}<div class="pt-2"><StatusDot tone={st.tone} label={st.label} /></div>{/if}
       <div class="min-w-0 flex-1">
         <h2 class="truncate text-lg font-semibold">{name}</h2>
         <div class="text-sm text-ink-2">{st?.label ?? 'No longer on the host'}</div>

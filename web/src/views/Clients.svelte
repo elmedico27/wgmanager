@@ -201,7 +201,7 @@
           >
             <td class="py-2.5 pr-3 pl-4">
               <div class="flex items-center gap-2.5">
-                <StatusDot tone={c.manageable ? st.tone : 'warn'} pulse={conn?.connected} />
+                <StatusDot tone={c.manageable ? st.tone : 'warn'} pulse={conn?.connected} label={conn?.connected ? `${st.label}, connected now` : st.label} />
                 {#if c.manageable}
                   <button class="font-medium hover:underline" onclick={(e) => { e.stopPropagation(); app.selected = c.name; }}>{c.name}</button>
                 {:else}
