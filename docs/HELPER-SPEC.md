@@ -224,8 +224,15 @@ One call returns clients and live stats (one SSH round trip per UI refresh).
   was found for that client (inconsistent; a warning is added).
 - `live` is whether the peer is present on the running interface. A disabled
   client is not live. `enabled` and `live` disagreeing is worth showing in the UI.
-- `endpoint`, `latest_handshake`, `transfer_*` are `null` when the interface is
-  down or the peer has never connected.
+- When the client is **not live** (interface down, client disabled, or peer
+  otherwise absent from the interface), `endpoint`, `latest_handshake` and both
+  `transfer_*` are `null`.
+- When it **is live** but has had no handshake since the interface last started,
+  `endpoint` and `latest_handshake` are `null` (`wg` reports `(none)` and `0`),
+  while `transfer_rx` and `transfer_tx` are numbers, normally `0`. All four come
+  from `wg show <iface> dump` and reset when the interface restarts.
+- `endpoint` is the client's address as last seen by the server (where its
+  packets came from), not the server's own endpoint from the client config.
 - **Direction:** `transfer_rx` is bytes the server received *from* the client
   (the client's upload); `transfer_tx` is the client's download. The UI must
   label these from the client's point of view.
