@@ -31,7 +31,18 @@ RUN npm ci --omit=dev --no-audit --no-fund
 
 # --- runtime -----------------------------------------------------------------------------
 FROM node:26.12.1-alpine3.24
-RUN apk add --no-cache openssh-client-default tini
+# npm, npx, corepack and yarn come with the Node image but the app never uses
+# them: it starts with `node`, as do the health check and the wgmanager wrapper.
+# Removing them drops the packages bundled inside npm, which image scanners
+# flag (Docker Scout, 2026-10-25: undici, ip-address, brace-expansion,
+# http-cache-semantics and postcss-selector-parser, all inside npm; even npm
+# 12.2.1 still ships undici and ip-address below the fixed versions). The build
+# stages above keep npm. `apk upgrade` picks up Alpine fixes published after the
+# base image (Scout: musl 1.2.6-r6; unverified until the next scan).
+RUN rm -rf /usr/local/lib/node_modules /opt/yarn-* \
+      /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg \
+ && apk upgrade --no-cache \
+ && apk add --no-cache openssh-client-default tini
 
 WORKDIR /opt/wgmanager
 COPY --from=server /src/server/node_modules server/node_modules
