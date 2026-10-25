@@ -12,7 +12,7 @@
   <label for="{idPrefix}-new" class="text-sm font-medium">New password</label>
   <input id="{idPrefix}-new" type="password" class="field" bind:value={password} autocomplete="new-password" {disabled} />
   <span class="text-xs {password && !lengthOk ? 'text-off' : 'text-ink-3'}">
-    At least {MIN_PASSWORD} characters. A few unrelated words works well.
+    At least {MIN_PASSWORD} characters.
   </span>
 </div>
 <div class="flex flex-col gap-1.5">

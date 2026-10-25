@@ -68,7 +68,6 @@
 
       {#if created}
         <div class="flex flex-col gap-4 px-5 pt-2 pb-5">
-          <p class="text-sm text-ink-2">Scan the QR code with the WireGuard app on the device, or download the config file. You can get both again later from the client's panel.</p>
           <ConfigView name={created.name} config={created.config} open="qr" />
           <div class="flex justify-end gap-2">
             <button class="btn btn-ghost" onclick={() => { app.adding = false; app.selected = created.name; }}>Open client</button>
@@ -77,7 +76,6 @@
         </div>
       {:else}
         <form class="flex flex-col gap-4 px-5 pt-2 pb-5" onsubmit={submit} novalidate>
-          <p class="text-sm text-ink-2">One client per device. A name like Alice_Phone makes it easy to tell them apart.</p>
           <div class="flex flex-col gap-1.5">
             <label for="add-name" class="text-sm font-medium">Name</label>
             <!-- svelte-ignore a11y_autofocus -->
@@ -98,7 +96,7 @@
               {#if touched && problem}
                 <span class="text-off">{problem}</span>
               {:else}
-                <span class="text-ink-3">Letters, digits, _ and -. Up to 15 characters.</span>
+                <span class="text-ink-3">Letters, digits, _ and -. Up to 15 characters. Must be unique.</span>
               {/if}
               <span class="tabular shrink-0 {name.length > 15 ? 'text-off' : 'text-ink-3'}">{name.length}/15</span>
             </div>

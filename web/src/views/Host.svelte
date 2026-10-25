@@ -25,7 +25,6 @@
 <header class="flex flex-wrap items-end justify-between gap-4">
   <div class="flex flex-col gap-1">
     <h1 class="text-2xl font-semibold tracking-tight">Host</h1>
-    <p class="text-sm text-ink-2">The WireGuard server and the helper wgmanager uses to manage it.</p>
   </div>
   <button class="btn btn-ghost" onclick={recheck} disabled={checking}>
     <Icon name="refresh" size={16} class={checking ? 'animate-spin' : ''} /> Check again
@@ -48,7 +47,7 @@
         <button class="mt-2 btn btn-ghost h-8" onclick={() => (app.view = 'settings')}>Review in Settings</button>
       {/if}
       {#if app.hostError.code === 'protocol_mismatch'}
-        <div class="mt-1 text-ink-3">Managing clients is paused until they match, so nothing is misread.</div>
+        <div class="mt-1 text-ink-3">Managing clients is paused until they match.</div>
       {/if}
     </div>
   </div>
@@ -105,10 +104,7 @@
 
 {#if v?.pivpn_scripts}
   <section class="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-card">
-    <div>
-      <h2 class="font-semibold">PiVPN scripts</h2>
-      <p class="text-sm text-ink-2">SHA-256 of the scripts the helper runs. Compare them with the tested versions in the README if PiVPN was updated.</p>
-    </div>
+    <h2 class="font-semibold">PiVPN scripts</h2>
     <div class="overflow-x-auto">
       <table class="w-full min-w-[520px] text-left text-sm">
         <tbody>

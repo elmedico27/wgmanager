@@ -45,10 +45,7 @@
   <div class="mx-auto flex max-w-2xl flex-col gap-8">
     <header class="flex flex-col gap-2">
       <h1 class="text-2xl font-semibold tracking-tight">Connect WG Manager to your server</h1>
-      <p class="text-ink-2">
-        WG Manager talks to your WireGuard server over SSH, through a small helper that can only manage WireGuard
-        clients. Install it once, then test the connection.
-      </p>
+      <p class="text-ink-2">Install the helper on your server, then test the connection.</p>
     </header>
 
     <ol class="flex flex-col gap-4">
@@ -73,7 +70,6 @@
               <dt class="text-ink-2">Account</dt>
               <dd><span class="font-mono">{ssh.user}</span> <span class="text-xs text-ink-3">SSH_USER</span></dd>
             </dl>
-            <p class="text-xs text-ink-3">These come from the container's environment. Change them in your compose file if they are wrong.</p>
           {/if}
 
           {#if needsConfirm}

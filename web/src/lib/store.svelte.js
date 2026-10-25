@@ -12,6 +12,7 @@
 //             identity, protocol mismatch, ...) show as a banner on top of the
 //             last known data; polling keeps checking and recovers on its own.
 import { api, onUnauthenticated } from './api.js';
+import { DEFAULT_SORT, validSort } from './sort.js';
 
 export const PROTOCOL = 1;
 const REFRESH_MS = 15000;
@@ -35,6 +36,7 @@ export const app = $state({
   notice: null, // short-lived message
   signedOutNotice: null, // why the login screen is showing, if not obvious
   layout: 'cards', // cards | list
+  sort: { ...DEFAULT_SORT }, // shared by list and cards; see lib/sort.js
   theme: 'system', // system | light | dark
 });
 
@@ -42,11 +44,12 @@ try {
   const saved = JSON.parse(localStorage.getItem('wgm-ui') || '{}');
   if (saved.layout === 'list' || saved.layout === 'cards') app.layout = saved.layout;
   if (['system', 'light', 'dark'].includes(saved.theme)) app.theme = saved.theme;
+  if (validSort(saved.sort)) app.sort = { key: saved.sort.key, dir: saved.sort.dir };
 } catch {}
 
 export function savePrefs() {
   try {
-    localStorage.setItem('wgm-ui', JSON.stringify({ layout: app.layout, theme: app.theme }));
+    localStorage.setItem('wgm-ui', JSON.stringify({ layout: app.layout, theme: app.theme, sort: app.sort }));
   } catch {}
 }
 

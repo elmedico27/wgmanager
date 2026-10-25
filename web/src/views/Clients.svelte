@@ -4,9 +4,11 @@
   import ClientCard from '../components/ClientCard.svelte';
   import { app, refresh, connect, savePrefs, isFlagged } from '../lib/store.svelte.js';
   import { bytes, status, connection, ago, errorText } from '../lib/format.js';
+  import { SORT_KEYS, sortClients, nextSort } from '../lib/sort.js';
 
   let list = $derived(app.list);
   let clients = $derived(list?.clients ?? []);
+  let sorted = $derived(sortClients(clients, app.sort));
   let up = $derived(list?.interface.up ?? true);
   let counts = $derived.by(() => {
     const c = { live: 0, off: 0, warn: 0, connected: 0 };
@@ -39,6 +41,11 @@
 
   function setLayout(l) {
     app.layout = l;
+    savePrefs();
+  }
+
+  function setSort(s) {
+    app.sort = s;
     savePrefs();
   }
 </script>
@@ -89,6 +96,24 @@
   </div>
 </header>
 
+{#if list && app.layout === 'cards' && clients.length > 1}
+  <div class="-mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm sm:justify-end" role="group" aria-label="Sort by">
+    <span class="font-semibold text-ink">Sort by</span>
+    {#each Object.keys(SORT_KEYS) as key}
+      {@const active = app.sort.key === key}
+      <button
+        class="inline-flex items-center gap-1 {active ? 'font-medium text-accent' : 'text-ink-2 hover:text-ink'}"
+        aria-pressed={active}
+        aria-label={active ? `${SORT_KEYS[key].label}, ${app.sort.dir === 'asc' ? 'ascending' : 'descending'}, click to reverse` : SORT_KEYS[key].label}
+        onclick={() => setSort(nextSort(app.sort, key))}
+      >
+        {SORT_KEYS[key].label}
+        {#if active}<Icon name={app.sort.dir === 'asc' ? 'up' : 'down'} size={13} />{/if}
+      </button>
+    {/each}
+  </div>
+{/if}
+
 {#if app.hostError}
   <div class="flex flex-wrap items-start gap-3 rounded-xl border border-off/40 bg-off-soft px-4 py-3 text-sm">
     <Icon name="alert" size={18} class="mt-0.5 shrink-0 text-off" />
@@ -115,8 +140,7 @@
     <div>
       <div class="font-medium">Interface {list.interface.name} is down</div>
       <div class="text-ink-2">
-        No client can connect. Adding and enabling clients are turned off, because the change would be written but
-        could not go live. Start it on the server with <code class="font-mono text-[13px]">sudo systemctl start wg-quick@{list.interface.name}</code>.
+        No client can connect. Start it on the server with <code class="font-mono text-[13px]">sudo systemctl start wg-quick@{list.interface.name}</code>.
       </div>
     </div>
   </div>
@@ -146,12 +170,11 @@
 {:else if list && clients.length === 0}
   <div class="flex flex-col items-center gap-3 rounded-xl border border-dashed border-line px-6 py-14 text-center">
     <div class="font-medium">No clients yet</div>
-    <p class="max-w-sm text-sm text-ink-2">Add a client for each phone, laptop or router that should connect. You'll get a QR code and a config file for it.</p>
     <button class="btn btn-primary" disabled={!up || !!app.hostError} onclick={() => (app.adding = true)}><Icon name="plus" size={16} /> Add client</button>
   </div>
 {:else if list && app.layout === 'cards'}
   <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-    {#each clients as client (client.name)}
+    {#each sorted as client (client.name)}
       <ClientCard {client} />
     {/each}
   </div>
@@ -160,15 +183,15 @@
     <table class="w-full min-w-[640px] text-left text-sm">
       <thead class="border-b border-line text-xs text-ink-3">
         <tr>
-          <th class="py-2.5 pr-3 pl-4 font-medium">Name</th>
-          <th class="px-3 py-2.5 font-medium">Address</th>
-          <th class="px-3 py-2.5 font-medium">Last handshake</th>
-          <th class="px-3 py-2.5 text-right font-medium">Download</th>
-          <th class="py-2.5 pr-4 pl-3 text-right font-medium">Upload</th>
+          {@render head('name', 'py-2.5 pr-3 pl-4')}
+          {@render head('address', 'px-3 py-2.5')}
+          {@render head('handshake', 'px-3 py-2.5')}
+          {@render head('download', 'px-3 py-2.5 text-right', true)}
+          {@render head('upload', 'py-2.5 pr-4 pl-3 text-right', true)}
         </tr>
       </thead>
       <tbody class="tabular">
-        {#each clients as c (c.name)}
+        {#each sorted as c (c.name)}
           {@const st = status(c, up)}
           {@const conn = connection(c, app.now)}
           <tr
@@ -203,3 +226,16 @@
     </table>
   </div>
 {/if}
+
+{#snippet head(key, cls, right = false)}
+  {@const active = app.sort.key === key}
+  <th class="{cls} font-medium" aria-sort={active ? (app.sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+    <button
+      class="inline-flex items-center gap-1 hover:text-ink {active ? 'text-ink' : ''} {right ? 'flex-row-reverse' : ''}"
+      onclick={() => setSort(nextSort(app.sort, key))}
+    >
+      {SORT_KEYS[key].label}
+      <Icon name={active && app.sort.dir === 'desc' ? 'down' : 'up'} size={12} class={active ? '' : 'invisible'} />
+    </button>
+  </th>
+{/snippet}

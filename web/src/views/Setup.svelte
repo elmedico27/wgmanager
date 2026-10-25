@@ -43,7 +43,6 @@
         <path d="M13.2 13.5h5.6M13.2 18.5h5.6" stroke="var(--on-accent)" stroke-width="2" stroke-linecap="round" />
       </svg>
       <h1 class="text-xl font-semibold text-white">Set up WG Manager</h1>
-      <p class="text-sm text-rail-ink">Choose the admin password. You'll use it to sign in from now on.</p>
     </div>
 
     <form class="flex flex-col gap-4 rounded-2xl bg-surface p-6 shadow-lift" onsubmit={submit}>
@@ -52,8 +51,7 @@
         <!-- svelte-ignore a11y_autofocus -->
         <input id="setup-code" class="field font-mono tracking-wider uppercase" bind:value={code} autocomplete="off" spellcheck="false" autofocus disabled={busy} />
         <span class="text-xs text-ink-3">
-          Printed in the container's log when it starts. Run <code class="font-mono">docker logs wgmanager</code> on the
-          server, or open the container's logs in Arcane, Portainer or a similar tool.
+          Printed in the container's log (<code class="font-mono">docker logs wgmanager</code>).
           {#if MOCK}<br />Preview code: <span class="font-mono">K7QM-4XTD-92PW</span>{/if}
         </span>
       </div>

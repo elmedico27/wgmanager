@@ -136,7 +136,7 @@
               <dd class="font-mono text-[13px]">{client.address}</dd>
             </div>
             <div class="flex justify-between gap-4 px-4 py-2.5">
-              <dt class="text-ink-2">Endpoint</dt>
+              <dt class="text-ink-2">Last seen from</dt>
               <dd class="min-w-0 truncate font-mono text-[13px]">{client.endpoint ?? '—'}</dd>
             </div>
             <div class="flex justify-between gap-4 px-4 py-2.5">

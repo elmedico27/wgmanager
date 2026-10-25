@@ -57,7 +57,6 @@
 
 <header class="flex flex-col gap-1">
   <h1 class="text-2xl font-semibold tracking-tight">Settings</h1>
-  <p class="text-sm text-ink-2">Connection settings come from the container's environment and are set in your compose file.</p>
 </header>
 
 <section class="flex flex-col gap-4 rounded-xl border border-line bg-surface p-5 shadow-card">
@@ -77,10 +76,7 @@
 </section>
 
 <section class="flex flex-col gap-4 rounded-xl border border-line bg-surface p-5 shadow-card">
-  <div>
-    <h2 class="font-semibold">Admin password</h2>
-    <p class="text-sm text-ink-2">Changing it signs out every other browser that is signed in.</p>
-  </div>
+  <h2 class="font-semibold">Admin password</h2>
   <form class="flex max-w-sm flex-col gap-4" onsubmit={changePassword}>
     <div class="flex flex-col gap-1.5">
       <label for="pw-current" class="text-sm font-medium">Current password</label>
@@ -93,10 +89,7 @@
 </section>
 
 <section class="flex flex-col gap-4 rounded-xl border border-line bg-surface p-5 shadow-card">
-  <div>
-    <h2 class="font-semibold">SSH connection</h2>
-    <p class="text-sm text-ink-2">Read-only here. To change one, set the variable in your compose file and recreate the container.</p>
-  </div>
+  <h2 class="font-semibold">SSH connection</h2>
   {#if ssh}
     <div class="overflow-x-auto">
       <table class="w-full min-w-[420px] text-left text-sm">
@@ -114,10 +107,7 @@
 </section>
 
 <section class="flex flex-col gap-4 rounded-xl border border-line bg-surface p-5 shadow-card">
-  <div>
-    <h2 class="font-semibold">Server identity</h2>
-    <p class="text-sm text-ink-2">wgmanager only talks to the server whose SSH fingerprint you confirmed.</p>
-  </div>
+  <h2 class="font-semibold">Server identity</h2>
   {#if hostKey?.pinned}
     <div class="flex flex-col gap-1 text-sm">
       <div class="font-mono text-[13px] break-all">{hostKey.pinned.fingerprint} <span class="font-sans text-xs text-ink-3">({hostKey.pinned.type})</span></div>
@@ -143,10 +133,7 @@
 </section>
 
 <section class="flex flex-col gap-4 rounded-xl border border-line bg-surface p-5 shadow-card">
-  <div>
-    <h2 class="font-semibold">App key</h2>
-    <p class="text-sm text-ink-2">Use this if you rebuild the server or move wgmanager to a new host.</p>
-  </div>
+  <h2 class="font-semibold">App key</h2>
   <InstallKey />
 </section>
 
