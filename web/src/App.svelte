@@ -12,17 +12,48 @@
   import Clients from './views/Clients.svelte';
   import Host from './views/Host.svelte';
   import Settings from './views/Settings.svelte';
+  import NotFound from './views/NotFound.svelte';
+  import { routeFromPath, pathFor } from './lib/routes.js';
 
   $effect(() => {
     const root = document.documentElement;
-    if (app.theme === 'system') root.removeAttribute('data-theme');
+    if (app.notFound) root.setAttribute('data-theme', 'dark'); // the 404 page is always dark
+    else if (app.theme === 'system') root.removeAttribute('data-theme');
     else root.setAttribute('data-theme', app.theme);
   });
 
-  boot();
+  // Keep the address bar in step with the page and the open client panel.
+  // `/` shows Clients and stays `/` until you navigate (the sidebar link goes to /clients).
+  $effect(() => {
+    if (app.phase !== 'ready' || app.notFound) return;
+    const view = app.view;
+    const selected = view === 'clients' ? app.selected : null;
+    const here = routeFromPath(location.pathname);
+    if (here && here.view === view && here.selected === selected) return;
+    history.pushState(null, '', pathFor(view, selected));
+  });
+
+  // Back and Forward.
+  $effect(() => {
+    const onpop = () => {
+      const r = routeFromPath(location.pathname);
+      if (!r || app.notFound) {
+        location.reload(); // into or out of the 404 page: start clean
+        return;
+      }
+      app.view = r.view;
+      app.selected = r.selected;
+    };
+    window.addEventListener('popstate', onpop);
+    return () => window.removeEventListener('popstate', onpop);
+  });
+
+  if (!app.notFound) boot();
 </script>
 
-{#if app.phase === 'loading'}
+{#if app.notFound}
+  <NotFound />
+{:else if app.phase === 'loading'}
   <div class="grid min-h-dvh place-items-center text-ink-3">Loading…</div>
 {:else if app.phase === 'offline'}
   <div class="gutter grid min-h-dvh place-items-center py-10">

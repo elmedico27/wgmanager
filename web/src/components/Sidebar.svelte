@@ -18,6 +18,8 @@
   }
 
   function go(id) {
+    // On `/` the page is already Clients, so the address would otherwise stay `/`.
+    if (id === 'clients' && location.pathname === '/') history.pushState(null, '', '/clients');
     app.view = id;
     app.selected = null;
   }

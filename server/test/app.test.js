@@ -202,6 +202,24 @@ test('UI files: index, hashed assets cached, nothing outside the build', async (
   }
 });
 
+test('page addresses: app pages get the app, anything else the app with 404', async () => {
+  for (const u of ['/', '/clients', '/clients/', '/host', '/settings/', '/clients/Alice_Phone', '/clients/Bob%20Phone']) {
+    const r = await client().req('GET', u);
+    assert.equal(r.res.status, 200, u);
+    assert.match(r.text, /<title>t<\/title>/, u);
+  }
+  for (const u of ['/wrongfolder', '/clients/a/b', '/hosts', '/settings/x', '/assets/missing.js', '/index.htm']) {
+    const r = await client().req('GET', u);
+    assert.equal(r.res.status, 404, u);
+    assert.match(r.text, /<title>t<\/title>/, u); // the app, which shows "Page not found"
+    assert.equal(r.res.headers.get('cache-control'), 'no-cache', u);
+  }
+  // API addresses never fall back to the app: still JSON (401 here, since nobody is signed in).
+  const r = await client().req('GET', '/api/nothing');
+  assert.ok([401, 404].includes(r.res.status));
+  assert.match(r.res.headers.get('content-type'), /json/);
+});
+
 // --- sessions ----------------------------------------------------------------------------
 
 test('session expires after 6 hours idle and after 7 days regardless', async () => {

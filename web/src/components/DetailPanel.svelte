@@ -8,7 +8,7 @@
   import ConfigView from './ConfigView.svelte';
   import { app, mutate, notify, isFlagged } from '../lib/store.svelte.js';
   import { tick } from 'svelte';
-  import { bytes, status, ago, date, errorText } from '../lib/format.js';
+  import { bytes, status, ago, date, errorText, unmanageableReason, isSafeName } from '../lib/format.js';
 
   let client = $derived(app.list?.clients.find((c) => c.name === app.selected) ?? null);
   let name = $derived(app.selected);
@@ -97,8 +97,13 @@
     </header>
 
     <div class="flex flex-1 flex-col gap-6 overflow-y-auto px-5 py-5">
-      {#if !client}
+      {#if !app.list}
+        <p class="text-sm text-ink-3">Loading…</p>
+      {:else if !client}
         <p class="text-sm text-ink-2">This client is not in the latest list from the host.</p>
+      {:else if !client.manageable}
+        <!-- reachable only by address (/clients/NAME); cards and rows don't open these -->
+        <p class="text-sm text-ink-2">{unmanageableReason(client, isSafeName)}</p>
       {:else}
         {#if isFlagged(name)}
           <div class="rounded-lg border border-warn-line bg-warn-soft px-3 py-2.5 text-sm">

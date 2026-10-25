@@ -5,7 +5,7 @@
 import qrcode from 'qrcode-generator';
 import crypto from 'node:crypto';
 import { Admin, Sessions, FailureLimiter, csrfMatches, passwordProblem } from './auth.js';
-import { securityHeaders, noStore, sendJson, parseCookies, readJson, serveUi } from './http.js';
+import { securityHeaders, noStore, sendJson, parseCookies, readJson, serveUi, serveIndex } from './http.js';
 
 export const PROTOCOL = 1;
 const COOKIE = 'wgm_sid';
@@ -298,7 +298,7 @@ export function createApp({ cfg, store, transport, ui = new Map(), log = console
     const url = req.url.split('?')[0];
     try {
       if (url.startsWith('/api/')) return await handleApi(req, res, url);
-      if ((req.method === 'GET' || req.method === 'HEAD') && serveUi(ui, req, res)) return;
+      if ((req.method === 'GET' || req.method === 'HEAD') && (serveUi(ui, req, res) || serveIndex(ui, req, res))) return;
       res.statusCode = 404;
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.end('Not found');

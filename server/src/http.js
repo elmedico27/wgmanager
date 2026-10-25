@@ -117,6 +117,25 @@ export function loadUi(dir) {
   return files;
 }
 
+// The app's pages (web/src/lib/routes.js): answered with index.html and 200.
+// Any other address gets index.html with 404, and the app shows "Page not found".
+const APP_ROUTE = /^\/(?:clients(?:\/[^/]+)?|host|settings)\/?$/;
+export function isAppRoute(url) {
+  return APP_ROUTE.test(url);
+}
+
+/** index.html for an address that isn't a file; false if no UI was built. */
+export function serveIndex(files, req, res) {
+  const file = files.get('/index.html');
+  if (!file) return false;
+  const url = req.url.split('?')[0];
+  res.statusCode = isAppRoute(url) ? 200 : 404;
+  res.setHeader('Content-Type', file.type);
+  res.setHeader('Cache-Control', 'no-cache');
+  res.end(req.method === 'HEAD' ? undefined : file.body);
+  return true;
+}
+
 export function serveUi(files, req, res) {
   const url = req.url.split('?')[0];
   const file = files.get(url === '/' ? '/index.html' : url);

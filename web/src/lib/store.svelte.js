@@ -13,6 +13,7 @@
 //             last known data; polling keeps checking and recovers on its own.
 import { api, onUnauthenticated } from './api.js';
 import { DEFAULT_SORT, validSort } from './sort.js';
+import { routeFromPath } from './routes.js';
 
 export const PROTOCOL = 1;
 const REFRESH_MS = 15000;
@@ -36,9 +37,17 @@ export const app = $state({
   notice: null, // short-lived message
   signedOutNotice: null, // why the login screen is showing, if not obvious
   layout: 'cards', // cards | list
+  notFound: false, // the address isn't a page of the app (lib/routes.js)
   sort: { ...DEFAULT_SORT }, // shared by list and cards; see lib/sort.js
   theme: 'system', // system | light | dark
 });
+
+// The page comes from the address, so links, bookmarks and refreshes land where they point.
+{
+  const r = routeFromPath(location.pathname);
+  if (r) Object.assign(app, r);
+  else app.notFound = true;
+}
 
 try {
   const saved = JSON.parse(localStorage.getItem('wgm-ui') || '{}');
@@ -65,6 +74,9 @@ function resetSessionState() {
     view: 'clients', list: null, version: null, settings: null, listError: null, hostError: null,
     hostKey: null, lastRefresh: 0, selected: null, adding: false, pending: {}, failures: [],
   });
+  // Signing in again returns to the page in the address bar.
+  const r = routeFromPath(location.pathname);
+  if (r) Object.assign(app, r);
 }
 
 // Any call that finds the session gone lands here (the 6-hour idle limit, a
