@@ -343,6 +343,8 @@ Settings live in the `.env` file next to `compose.yaml`. All are optional. After
 | `TRUST_PROXY` | `0` | Set to `1` only if an HTTPS reverse proxy sits in front of WG Manager. It then marks sign-in cookies as secure and trusts the proxy's `X-Forwarded-*` headers. | You put WG Manager behind a reverse proxy that serves HTTPS. |
 | `WGM_VERSION` | `latest` | Which version of the app to run: `latest` (the newest release), `edge` (the newest, less tested, commit) or a fixed version such as `0.1.0`. | You want to stay on a specific version. |
 
+**Where the image comes from:** each release is published to two registries with identical tags: GitHub Container Registry (`ghcr.io/elmedico27/wgmanager`, the default in `compose.yaml`) and [Docker Hub](https://hub.docker.com/r/elmedico27/wgmanager) (`elmedico27/wgmanager`). To pull from Docker Hub instead, change the `image:` line in `compose.yaml` to `elmedico27/wgmanager:${WGM_VERSION:-latest}`.
+
 **Behind a reverse proxy:** set `TRUST_PROXY=1`, and consider `WEB_BIND=127.0.0.1` so the page can be reached only through the proxy. Plain HTTP on your own network works too.
 
 ---

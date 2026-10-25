@@ -161,3 +161,5 @@ export function passwordProblem(pw, confirm) {
 
 // The project's home; used by the sidebar link and the recovery link.
 export const REPO_URL = 'https://github.com/elmedico27/wgmanager';
+// The published image on Docker Hub (Settings links to it).
+export const DOCKER_HUB_URL = 'https://hub.docker.com/r/elmedico27/wgmanager';
