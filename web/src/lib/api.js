@@ -50,6 +50,8 @@
 // not count as use for the 6-hour idle sign-out.
 
 export const MOCK = __MOCK__;
+// Public demo build: mock inside, Preview panel left out, state kept per tab.
+export const DEMO = __DEMO__;
 
 let mock = null;
 async function getMock() {

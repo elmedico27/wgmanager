@@ -1,6 +1,6 @@
 <script>
   import { app, boot } from './lib/store.svelte.js';
-  import { MOCK } from './lib/api.js';
+  import { MOCK, DEMO } from './lib/api.js';
   import Sidebar from './components/Sidebar.svelte';
   import FailureBanner from './components/FailureBanner.svelte';
   import DetailPanel from './components/DetailPanel.svelte';
@@ -101,6 +101,6 @@
   </div>
 {/if}
 
-{#if MOCK}
+{#if MOCK && !DEMO}
   <PreviewControls />
 {/if}

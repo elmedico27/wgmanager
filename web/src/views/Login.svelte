@@ -1,6 +1,6 @@
 <script>
   import { app, login } from '../lib/store.svelte.js';
-  import { MOCK } from '../lib/api.js';
+  import { MOCK, DEMO } from '../lib/api.js';
   import { errorText } from '../lib/format.js';
 
   let password = $state('');
@@ -41,7 +41,11 @@
         <label for="login-password" class="text-sm font-medium">Admin password</label>
         <!-- svelte-ignore a11y_autofocus -->
         <input id="login-password" type="password" class="field" bind:value={password} autocomplete="current-password" autofocus />
-        {#if MOCK}<span class="text-xs text-ink-3">Preview: any password works.</span>{/if}
+        {#if DEMO}
+          <span class="text-xs text-ink-3">Demo: any password works. Nothing here connects to a real server.</span>
+        {:else if MOCK}
+          <span class="text-xs text-ink-3">Preview: any password works.</span>
+        {/if}
       </div>
       {#if error}<p class="text-sm text-off" role="alert">{error}</p>{/if}
       <button class="btn btn-primary h-10" disabled={!password || busy}>{busy ? 'Signing in…' : 'Sign in'}</button>

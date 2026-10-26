@@ -3,7 +3,7 @@
   import InstallKey from '../components/InstallKey.svelte';
   import PasswordFields from '../components/PasswordFields.svelte';
   import { app, savePrefs, logout, notify, connect } from '../lib/store.svelte.js';
-  import { api } from '../lib/api.js';
+  import { api, DEMO } from '../lib/api.js';
   import { MIN_PASSWORD, REPO_URL, DOCKER_HUB_URL } from '../lib/format.js';
 
   let current = $state('');
@@ -54,6 +54,12 @@
     { id: 'dark', label: 'Dark', icon: 'moon' },
   ];
 </script>
+
+{#if DEMO}
+  <p class="rounded-lg border border-line bg-surface-2 px-3 py-2.5 text-sm text-ink-2 md:hidden">
+    <span class="font-medium text-ink">Demo.</span> Not connected to a server. Your changes stay in this browser tab.
+  </p>
+{/if}
 
 <header class="flex items-center justify-between gap-4">
   <h1 class="text-2xl font-semibold tracking-tight">Settings</h1>

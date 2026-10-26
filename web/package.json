@@ -8,7 +8,8 @@
     "dev": "vite",
     "dev:real": "vite --mode real",
     "build": "vite build",
-    "build:preview": "vite build --mode preview"
+    "build:preview": "vite build --mode preview",
+    "build:demo": "vite build --mode demo"
   },
   "devDependencies": {
     "@fontsource/ibm-plex-mono": "5.3.0",

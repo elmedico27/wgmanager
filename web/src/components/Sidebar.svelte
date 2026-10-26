@@ -1,6 +1,7 @@
 <script>
   import Icon from './Icon.svelte';
   import { app, logout, savePrefs } from '../lib/store.svelte.js';
+  import { DEMO } from '../lib/api.js';
 
   const nav = [
     { id: 'clients', label: 'Clients', icon: 'clients' },
@@ -68,6 +69,12 @@
   </nav>
 
   <div class="mt-auto flex flex-col gap-1 px-3 pb-5">
+    {#if DEMO}
+      <div class="mb-3 rounded-lg border border-accent/40 px-3 py-2.5 text-xs">
+        <div class="font-medium text-white">Demo</div>
+        <div class="mt-1 text-rail-ink-2">Not connected to a server. Your changes stay in this browser tab.</div>
+      </div>
+    {/if}
     {#if iface}
       <div class="mb-3 rounded-lg border border-white/5 px-3 py-2.5 text-xs">
         <div class="flex items-center gap-2 text-rail-ink">

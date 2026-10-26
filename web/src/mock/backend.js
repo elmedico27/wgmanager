@@ -3,7 +3,7 @@
 // passing helper envelopes through unchanged, and adds the app-level states the
 // backend owns: login, first run (helper unreachable), SSH timeout.
 
-import { run, scenarios as helperScenarios } from './helper.js';
+import { run, scenarios as helperScenarios, snapshot, restore } from './helper.js';
 import qrcode from 'qrcode-generator';
 
 // As in the real backend: UTF-8, not the library's 8-bit truncation.
@@ -45,6 +45,38 @@ const settings = {
 
 const appError = (code, message) => ({ ok: false, error: { code, message } });
 
+// Demo build (`npm run build:demo`): keep the sign-in, clients and host-key
+// state across a refresh. sessionStorage belongs to one browser tab and is
+// cleared when the tab closes, so each new visit starts from the same data and
+// no visitor sees another's changes. Dev and the design preview stay in memory.
+const DEMO_KEY = 'wgm-demo';
+
+function loadDemo() {
+  try {
+    const s = JSON.parse(sessionStorage.getItem(DEMO_KEY) || 'null');
+    if (!s) return;
+    restore(s.helper);
+    authenticated = s.authenticated === true;
+    appScenarios.hostKeyPinned = s.hostKeyPinned !== false;
+    if (s.pinned) pinned = s.pinned;
+  } catch {
+    // storage blocked or unreadable: start clean
+  }
+}
+
+function saveDemo() {
+  try {
+    sessionStorage.setItem(
+      DEMO_KEY,
+      JSON.stringify({ helper: snapshot(), authenticated, hostKeyPinned: appScenarios.hostKeyPinned, pinned }),
+    );
+  } catch {
+    // storage blocked or full: the demo still works, it just forgets on refresh
+  }
+}
+
+if (__DEMO__) loadDemo();
+
 async function helper(request) {
   // Order matters: the host key is checked before the app's key is offered.
   if (appScenarios.hostKeyChanged) return appError('hostkey_changed', 'the server presented a different host key');
@@ -59,6 +91,12 @@ async function helper(request) {
 }
 
 export async function handle(method, path, body) {
+  const r = await route(method, path, body);
+  if (__DEMO__) saveDemo();
+  return r;
+}
+
+async function route(method, path, body) {
   const m = path.match(/^\/api\/clients\/([^/]+)(?:\/(enable|disable|config))?$/);
 
   if (path === '/api/setup' && method === 'POST') {

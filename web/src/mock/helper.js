@@ -46,7 +46,7 @@ function fakeKey() {
   return btoa(s); // 44 chars ending in '=' like a real WireGuard key
 }
 
-const SERVER_PUBLIC_KEY = fakeKey();
+let SERVER_PUBLIC_KEY = fakeKey();
 
 // --- scenarios -----------------------------------------------------------------
 
@@ -130,6 +130,20 @@ function tick() {
       c.rx += c.rate * dt * 0.18 * (0.6 + Math.random() * 0.8);
     }
   }
+}
+
+// Demo build only (backend.js keeps these in sessionStorage): the visitor's
+// clients and the server key survive a refresh of the same tab.
+export function snapshot() {
+  tick();
+  return { clients, serverKey: SERVER_PUBLIC_KEY, at: Date.now() };
+}
+
+export function restore(s) {
+  if (!Array.isArray(s?.clients) || typeof s.serverKey !== 'string') return;
+  clients = s.clients;
+  SERVER_PUBLIC_KEY = s.serverKey;
+  if (typeof s.at === 'number') lastTick = s.at; // the next tick covers the time away
 }
 
 function allClients() {
