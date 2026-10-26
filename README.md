@@ -15,9 +15,14 @@ WG Manager has three parts:
 
 PiVPN stays in charge of your server, and the `pivpn` command keeps working alongside WG Manager. [How it works](#how-it-works) has the details.
 
+> [!TIP]
+> **[Try the live demo](https://wgmanager-demo.pages.dev).** It runs entirely in your browser with sample data, and any password signs you in.
+
+
+# Documentation
+
 **Jump to:** [Before you begin](#before-you-begin) · [Install](#install) · [Using WG Manager](#using-wg-manager) · [Update](#update) · [Troubleshooting](#troubleshooting) · [Uninstall](#uninstall) · [Configuration reference](#configuration-reference)
 
----
 
 ## Before you begin
 
