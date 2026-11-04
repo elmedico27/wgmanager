@@ -11,6 +11,10 @@ the helper too.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-11-04
+
+Ships helper 0.1.4.
+
 ### Added
 
 - Documentation site, built from `docs/` with VitePress and published to
@@ -21,9 +25,15 @@ the helper too.
 
 ### Changed
 
+- The **Recovery steps** link on a failed-change warning opens the recovery
+  guide on the documentation site.
+- The README follows a shorter layout (overview, install, update, uninstall)
+  and links to the documentation site for everything else.
 - Usage, configuration, troubleshooting and background information, the
   recovery guide and the helper specification moved from the README and
   `docs/` to the documentation site.
+- The image is built on Node 26.13.0, the first Node 26 LTS release, and the
+  web UI is built with Vite 8.3.5.
 - Helper specification: clarified that a client which is live but has never
   completed a handshake reports transfer counters of 0, and that all four live
   statistics are empty only when the client is not live.
@@ -143,7 +153,8 @@ Verified from source, not run:
   one line per entry, and sshd matches each entry on its own with `*` and `?`
   wildcards only (OpenSSH 10.0p2).
 
-[Unreleased]: https://github.com/elmedico27/wgmanager/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/elmedico27/wgmanager/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/elmedico27/wgmanager/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/elmedico27/wgmanager/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/elmedico27/wgmanager/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/elmedico27/wgmanager/releases/tag/v0.1.0
