@@ -17,16 +17,16 @@ export default defineConfig({
     logo: '/favicon.svg',
     nav: [
       { text: 'Guide', link: '/guide/getting-started' },
-      { text: 'Reference', link: '/reference/helper-protocol' },
-      { text: 'Development', link: '/development/' },
+      { text: 'Technical details', link: '/guide/how-it-works' },
+      { text: 'Contributing', link: '/development/' },
       { text: 'Demo', link: 'https://wgmanager-demo.pages.dev' }
     ],
     sidebar: [
       {
-        text: 'Guide',
+        text: 'Using WG Manager',
         items: [
           { text: 'Getting started', link: '/guide/getting-started' },
-          { text: 'Using WG Manager', link: '/guide/using' },
+          { text: 'Web interface', link: '/guide/web-interface' },
           { text: 'Configuration', link: '/guide/configuration' }
         ]
       },
@@ -38,24 +38,16 @@ export default defineConfig({
         ]
       },
       {
-        text: 'How it works',
+        text: 'Technical details',
         items: [
-          { text: 'Architecture', link: '/guide/how-it-works' },
-          { text: 'Security', link: '/guide/security' }
+          { text: 'How it works', link: '/guide/how-it-works' },
+          { text: 'Security', link: '/guide/security' },
+          { text: 'Helper protocol', link: '/reference/helper-protocol' }
         ]
-      },
-      {
-        text: 'Reference',
-        items: [{ text: 'Helper protocol', link: '/reference/helper-protocol' }]
       },
       {
         text: 'Development',
-        items: [
-          { text: 'Overview', link: '/development/' },
-          { text: 'Web UI', link: '/development/web' },
-          { text: 'Backend', link: '/development/server' },
-          { text: 'Host tools', link: '/development/host' }
-        ]
+        items: [{ text: 'Contributing', link: '/development/' }]
       }
     ],
     socialLinks: [{ icon: 'github', link: repo }],
