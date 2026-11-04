@@ -16,7 +16,7 @@
 # The UI and the backend's dependency are the same on every CPU, so these two
 # stages run on the builder's own platform (no emulation); see Docker's
 # multi-platform docs (FROM --platform=$BUILDPLATFORM).
-FROM --platform=$BUILDPLATFORM node:26.12.1-alpine3.24 AS web
+FROM --platform=$BUILDPLATFORM node:26.13.0-alpine3.24 AS web
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -24,13 +24,13 @@ COPY web/ ./
 RUN npm run build
 
 # --- the backend's one dependency ----------------------------------------------------
-FROM --platform=$BUILDPLATFORM node:26.12.1-alpine3.24 AS server
+FROM --platform=$BUILDPLATFORM node:26.13.0-alpine3.24 AS server
 WORKDIR /src/server
 COPY server/package.json server/package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 
 # --- runtime -----------------------------------------------------------------------------
-FROM node:26.12.1-alpine3.24
+FROM node:26.13.0-alpine3.24
 # npm, npx, corepack and yarn come with the Node image but the app never uses
 # them: it starts with `node`, as do the health check and the wgmanager wrapper.
 # Removing them drops the packages bundled inside npm, which image scanners
