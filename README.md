@@ -70,10 +70,11 @@ WG Manager is a **Docker web app** and a **small helper** on the server that run
 
 ### Prerequisites
 
-- A 64-bit (amd64 or arm64) Debian or Debian-based server with SSH enabled.
-- [PiVPN](https://pivpn.io), set up for **WireGuard**, on the same server.
-- Docker with Compose v2
-- Python v3
+- A 64-bit (amd64 or arm64) Debian or Debian-based server, with all of the following:
+  - [PiVPN](https://pivpn.io), set up for **WireGuard**
+  - [Docker](https://docs.docker.com/engine/install/debian/)
+  - Python 3 (`sudo apt install python3`)
+  - SSH enabled
 
 ### Installation
 
@@ -85,7 +86,8 @@ WG Manager is a **Docker web app** and a **small helper** on the server that run
    curl -fsSLo .env https://raw.githubusercontent.com/elmedico27/wgmanager/master/.env.example
    ```
 
-2. **Set your SSH port.** If it isn't `22`, set `SSH_PORT` in `.env`. To check it, run `sudo sshd -T | grep -i '^port '`.  See [Configuration](https://elmedico27.github.io/wgmanager/guide/configuration) for all `.env` settings.
+2. **Set your SSH port.**  
+   - If it isn't `22`, set `SSH_PORT` in `.env`. To check it, run `sudo sshd -T | grep -i '^port '`.  See [Configuration](https://elmedico27.github.io/wgmanager/guide/configuration) for all `.env` settings.
 
 3. **Start WG Manager** and find the one-time setup code in its log:
 
@@ -94,11 +96,14 @@ WG Manager is a **Docker web app** and a **small helper** on the server that run
    docker logs wgmanager
    ```
 
-4. **Choose your admin password.** In a browser, open `http://<server-address>:7501`, enter the setup code, and choose a password of at least 12 characters.
+4. **Choose your admin password.** 
+   - In a browser, open `http://<server-address>:7501`, enter the setup code, and choose a password of at least 12 characters.
 
-5. **Install the helper.** The next screen shows an install command with this app's key filled in. Click **Copy**, run it on the server, and type `y` at `Proceed? [y/N]`. Its last line is the server's fingerprint.
+5. **Install the helper.** 
+   - The next screen shows an install command with this app's key filled in. Click **Copy**, run it on the server, and type `y` at `Proceed? [y/N]`. Its last line is the server's fingerprint.
 
-6. **Confirm your server.** Click **Test connection**. If the fingerprint matches the installer's last line, click **It matches**. If it doesn't, click **It doesn't match** and stop.
+6. **Confirm your server.** 
+   - Click **Test connection**. If the fingerprint matches the installer's last line, click **It matches**. If it doesn't, click **It doesn't match** and stop.
 
 The web interface will load and automatically populate your clients. Each step is explained in full in the [getting started](https://elmedico27.github.io/wgmanager/guide/getting-started) guide.
 
@@ -110,7 +115,6 @@ The web interface will load and automatically populate your clients. Each step i
 1. In your project folder, run:
 
    ```sh
-   cd ~/wgmanager
    docker compose pull && docker compose up -d
    ```
     
