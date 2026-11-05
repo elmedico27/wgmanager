@@ -49,6 +49,7 @@
 ## About The Project
 
 Add, delete, enable, and disable your WireGuard clients, all without opening a terminal.  Show a client's QR code, download its config file, and see who is connected.
+
 WG Manager is a **Docker web app** and a **small helper** on the server that runs PiVPN commands under a limited-purpose user.  See more about [how it works](https://elmedico27.github.io/wgmanager/guide/how-it-works).
 
 <picture>
@@ -101,15 +102,16 @@ The web interface will load and automatically populate your clients. Each step i
 
 ### Update
 
+> [!NOTE]
+> If you pinned `WGM_VERSION` in `.env` to a fixed version, change it first.
+
 1. In your project folder, run:
 
    ```sh
    cd ~/wgmanager
    docker compose pull && docker compose up -d
    ```
-    > [!NOTE]
-    > If you pinned `WGM_VERSION` in `.env` to a fixed version, change it first.
-
+    
 2. Sign in, open **Settings › App key**, and run the install command on the server again.
 
 ### Uninstall
