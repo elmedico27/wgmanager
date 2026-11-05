@@ -11,6 +11,12 @@ the helper too.
 
 ## [Unreleased]
 
+### Added
+
+- A **Helper update available** notice at the top of every page when the helper
+  on the server is older than the one the app comes with. It shows the update
+  command and clears itself once the helper is current.
+
 ### Changed
 
 - The live demo moved to https://wgmdemo.pages.dev and is now built directly

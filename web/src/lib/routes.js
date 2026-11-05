@@ -7,6 +7,16 @@
 // app (status 200) and everything else with the app and status 404
 // (server/src/http.js isAppRoute); keep the two in step.
 
+// Whether pages follow the address bar. Off in the single-file design preview,
+// which runs at an address the app doesn't know: it starts on Clients and
+// keeps the current page in memory.
+export const USE_ADDRESS = !__PREVIEW__;
+
+/** The page for the current address (always Clients when addresses are off). */
+export function currentRoute() {
+  return USE_ADDRESS ? routeFromPath(location.pathname) : { view: 'clients', selected: null };
+}
+
 /** { view, selected } for a path, or null when it isn't a page of the app. */
 export function routeFromPath(pathname) {
   const p = (pathname || '/').replace(/\/+$/, '') || '/';

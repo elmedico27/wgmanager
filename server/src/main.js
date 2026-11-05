@@ -7,6 +7,7 @@ import { loadConfig } from './config.js';
 import { Store } from './store.js';
 import { SshTransport, MockTransport } from './transport.js';
 import { createApp } from './app.js';
+import { readHelperVersion, BUNDLED_HELPER_PATH } from './bundled.js';
 import { loadUi } from './http.js';
 
 let cfg;
@@ -44,7 +45,10 @@ await transport.init();
 const ui = loadUi(cfg.uiDir);
 if (!ui.size) console.log(`wgmanager: no built UI found in ${cfg.uiDir}; only /api is served`);
 
-const app = createApp({ cfg, store, transport, ui });
+const bundledHelper = readHelperVersion();
+if (!bundledHelper) console.log(`wgmanager: no helper version found in ${BUNDLED_HELPER_PATH}; the helper update check is off`);
+
+const app = createApp({ cfg, store, transport, ui, bundledHelper });
 app.admin.announceSetupCode();
 
 const server = http.createServer(app.handle);

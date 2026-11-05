@@ -159,6 +159,24 @@ export function passwordProblem(pw, confirm) {
   return null;
 }
 
+// The command that installs (or updates) the helper and the app's key on the
+// server. The host tool ships inside the image at /opt/wgmanager/host (see the
+// Dockerfile); copy it out as root, then run it. `wgmanager` is the
+// container_name in compose.yaml.
+const TOOL_DIR = '/usr/local/lib/wgmanager';
+export function installCommand(publicKey) {
+  return `sudo docker cp wgmanager:/opt/wgmanager/host/. ${TOOL_DIR} && \\\n  sudo python3 ${TOOL_DIR}/wgmanager-host install --pubkey "${publicKey}"`;
+}
+
+/** True when helper version `a` (x.y.z) is older than `b`. Unparseable versions never count as older. */
+export function versionOlder(a, b) {
+  const parse = (v) => (typeof v === 'string' && /^[0-9]+\.[0-9]+\.[0-9]+$/.test(v) ? v.split('.').map(Number) : null);
+  const x = parse(a), y = parse(b);
+  if (!x || !y) return false;
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] < y[i];
+  return false;
+}
+
 // The project's source (Settings links to it).
 export const REPO_URL = 'https://github.com/elmedico27/wgmanager';
 // The documentation site (the failure banner's Recovery steps link).

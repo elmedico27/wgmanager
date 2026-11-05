@@ -13,7 +13,7 @@
 //             last known data; polling keeps checking and recovers on its own.
 import { api, onUnauthenticated } from './api.js';
 import { DEFAULT_SORT, validSort } from './sort.js';
-import { routeFromPath } from './routes.js';
+import { currentRoute } from './routes.js';
 
 export const PROTOCOL = 1;
 const REFRESH_MS = 15000;
@@ -44,7 +44,7 @@ export const app = $state({
 
 // The page comes from the address, so links, bookmarks and refreshes land where they point.
 {
-  const r = routeFromPath(location.pathname);
+  const r = currentRoute();
   if (r) Object.assign(app, r);
   else app.notFound = true;
 }
@@ -75,7 +75,7 @@ function resetSessionState() {
     hostKey: null, lastRefresh: 0, selected: null, adding: false, pending: {}, failures: [],
   });
   // Signing in again returns to the page in the address bar.
-  const r = routeFromPath(location.pathname);
+  const r = currentRoute();
   if (r) Object.assign(app, r);
 }
 

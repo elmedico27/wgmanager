@@ -1,9 +1,9 @@
-// In-browser stand-in for the Express backend (preview and `npm run dev` only).
-// It mirrors the HTTP API the real backend will expose (see src/lib/api.js),
+// In-browser stand-in for the backend (preview, demo and `npm run dev` only).
+// It mirrors the HTTP API the real backend exposes (see src/lib/api.js),
 // passing helper envelopes through unchanged, and adds the app-level states the
 // backend owns: login, first run (helper unreachable), SSH timeout.
 
-import { run, scenarios as helperScenarios, snapshot, restore } from './helper.js';
+import { run, scenarios as helperScenarios, snapshot, restore, HELPER_VERSION } from './helper.js';
 import qrcode from 'qrcode-generator';
 
 // As in the real backend: UTF-8, not the library's 8-bit truncation.
@@ -41,6 +41,9 @@ const settings = {
   ssh: { host: '172.29.88.1', port: 22, user: 'wgweb' },
   publicKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK7x2mQ9vR4tYw8pL3nHc6fJ1sB0aEdZuXgVqTyWiMoN wgmanager@container',
   allowFrom: ['127.0.0.1', '::1', '172.29.88.0/29'],
+  // The helper this image would ship; the mock helper reports an older one when
+  // the "Helper out of date" preview switch is on.
+  bundledHelper: HELPER_VERSION,
 };
 
 const appError = (code, message) => ({ ok: false, error: { code, message } });

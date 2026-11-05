@@ -2,6 +2,7 @@
   import Icon from './Icon.svelte';
   import { app, logout, savePrefs } from '../lib/store.svelte.js';
   import { DEMO } from '../lib/api.js';
+  import { USE_ADDRESS } from '../lib/routes.js';
 
   const nav = [
     { id: 'clients', label: 'Clients', icon: 'clients' },
@@ -20,7 +21,7 @@
 
   function go(id) {
     // On `/` the page is already Clients, so the address would otherwise stay `/`.
-    if (id === 'clients' && location.pathname === '/') history.pushState(null, '', '/clients');
+    if (USE_ADDRESS && id === 'clients' && location.pathname === '/') history.pushState(null, '', '/clients');
     app.view = id;
     app.selected = null;
   }

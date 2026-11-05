@@ -3,17 +3,10 @@
   import { copyText, COPY_FAILED } from '../lib/clipboard.js';
   import Icon from './Icon.svelte';
   import { app, notify } from '../lib/store.svelte.js';
+  import { installCommand } from '../lib/format.js';
 
   let s = $derived(app.settings);
-  // The host tool ships inside the image; copy it out as root, then run it.
-  // /opt/wgmanager/host is where the Dockerfile puts it; `wgmanager` is the
-  // container_name in compose.yaml.
-  const TOOL_DIR = '/usr/local/lib/wgmanager';
-  let command = $derived(
-    s
-      ? `sudo docker cp wgmanager:/opt/wgmanager/host/. ${TOOL_DIR} && \\\n  sudo python3 ${TOOL_DIR}/wgmanager-host install --pubkey "${s.publicKey}"`
-      : '',
-  );
+  let command = $derived(s ? installCommand(s.publicKey) : '');
 
   async function copy(text, what) {
     notify((await copyText(text)) ? `${what} copied` : COPY_FAILED);

@@ -118,7 +118,7 @@ The web interface will load and automatically populate your clients. Each step i
    docker compose pull && docker compose up -d
    ```
     
-2. Sign in, open **Settings › App key**, and run the install command on the server again.
+2. Sign in. If a **Helper update available** notice appears, click **Show update command** and run it on the server, then click **Check again**. No notice means the helper is already up to date.
 
 ### Uninstall
 

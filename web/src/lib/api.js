@@ -23,7 +23,7 @@
 //   POST   /api/session  {password}     -> {authenticated}
 //   DELETE /api/session
 //   POST   /api/password {current, password}  change; signs out other sessions
-//   GET    /api/settings                -> {ssh:{host,port,user}, publicKey, allowFrom[]}
+//   GET    /api/settings                -> {ssh:{host,port,user}, publicKey, allowFrom[], bundledHelper}
 //   GET    /api/hostkey                 -> {pinned: {fingerprint,type,at}|null, offered: {fingerprint,type}}
 //   POST   /api/hostkey  {fingerprint}  pin the key the server offers now (must match)
 //   DELETE /api/hostkey                 forget the pin; the next connection asks again

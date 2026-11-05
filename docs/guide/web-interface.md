@@ -43,6 +43,13 @@ Shows the state of the server side: the WireGuard interface (name, port, public 
 - **Server identity:** the pinned fingerprint. Use **Confirm a new server identity…** only after you have deliberately replaced the server's SSH keys.
 - **App key:** the app's public SSH key and the install command, used when you [update](./getting-started#update) the helper.
 
+## Notices at the top
+
+Two kinds of notice can appear above every page:
+
+- **A change failed or may be incomplete.** It stays until you click **I've checked this**. See [Recovering from a failed change](./recovery).
+- **Helper update available.** The helper on your server is older than the one this version of WG Manager comes with. Click **Show update command**, run the command on the server, then click **Check again**. The notice disappears once the helper is current.
+
 ## Page links
 
 Each page has its own address, so you can bookmark it: `/clients`, `/host` and `/settings`. A client's panel has one too: `/clients/<name>`. Your browser's Back and Forward buttons work as expected.

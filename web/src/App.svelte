@@ -3,6 +3,7 @@
   import { MOCK, DEMO } from './lib/api.js';
   import Sidebar from './components/Sidebar.svelte';
   import FailureBanner from './components/FailureBanner.svelte';
+  import HelperUpdateBanner from './components/HelperUpdateBanner.svelte';
   import DetailPanel from './components/DetailPanel.svelte';
   import AddDialog from './components/AddDialog.svelte';
   import PreviewControls from './components/PreviewControls.svelte';
@@ -13,7 +14,7 @@
   import Host from './views/Host.svelte';
   import Settings from './views/Settings.svelte';
   import NotFound from './views/NotFound.svelte';
-  import { routeFromPath, pathFor } from './lib/routes.js';
+  import { routeFromPath, pathFor, USE_ADDRESS } from './lib/routes.js';
 
   $effect(() => {
     const root = document.documentElement;
@@ -25,7 +26,7 @@
   // Keep the address bar in step with the page and the open client panel.
   // `/` shows Clients and stays `/` until you navigate (the sidebar link goes to /clients).
   $effect(() => {
-    if (app.phase !== 'ready' || app.notFound) return;
+    if (!USE_ADDRESS || app.phase !== 'ready' || app.notFound) return;
     const view = app.view;
     const selected = view === 'clients' ? app.selected : null;
     const here = routeFromPath(location.pathname);
@@ -35,6 +36,7 @@
 
   // Back and Forward.
   $effect(() => {
+    if (!USE_ADDRESS) return;
     const onpop = () => {
       const r = routeFromPath(location.pathname);
       if (!r || app.notFound) {
@@ -78,6 +80,7 @@
     <main class="gutter pb-28 pt-6 md:pb-12 md:pt-8">
       <div class="mx-auto flex max-w-6xl flex-col gap-6">
         <FailureBanner />
+        <HelperUpdateBanner />
         {#if app.view === 'clients'}
           <Clients />
         {:else if app.view === 'host'}

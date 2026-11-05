@@ -14,6 +14,9 @@ export default defineConfig(({ mode }) => ({
   define: {
     __MOCK__: JSON.stringify(mode === 'development' || mode === 'preview' || mode === 'demo'),
     __DEMO__: JSON.stringify(mode === 'demo'),
+    // The single-file design preview runs at an address the app doesn't know
+    // (a claude.ai artifact), so it keeps pages in memory instead.
+    __PREVIEW__: JSON.stringify(mode === 'preview'),
   },
   server: mode === 'real' ? { proxy: { '/api': 'http://127.0.0.1:7501' } } : undefined,
   plugins: [svelte(), tailwindcss(), ...(mode === 'preview' ? [viteSingleFile()] : [])],

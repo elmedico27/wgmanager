@@ -150,7 +150,7 @@ Update the app first, then the helper. Both steps are safe to repeat. Read the [
 
    Your password, SSH key and confirmed server identity are kept, so you don't need a new setup code. If you set `WGM_VERSION` in `.env` to a fixed version, change it to the new one first.
 
-2. **Update the helper.** Sign in, open **Settings › App key**, copy the install command and run it on the server, exactly as in [Step 5](#install-helper). It changes only what differs. The app and the helper are released together, so do this after every app update.
+2. **Update the helper, if needed.** Sign in. When the helper on your server is older than the one the new app version comes with, a **Helper update available** notice appears at the top of every page. Click **Show update command**, copy the command and run it on the server, then click **Check again**. The notice disappears once the helper is current. If no notice appears, the helper is already up to date. The same command is under **Settings › App key**; it changes only what differs, so running it again is harmless.
 
 
 ## Uninstall

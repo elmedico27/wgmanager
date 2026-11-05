@@ -10,7 +10,7 @@
 // Never used in production builds: src/lib/api.js imports it only in mock mode.
 
 export const PROTOCOL = 1;
-const HELPER_VERSION = '0.1.4';
+export const HELPER_VERSION = '0.1.4';
 const IFACE = 'wg0';
 const SUBNET = { base: [10, 0, 0, 0], prefix: 24, text: '10.0.0.0/24' };
 const ENDPOINT_HOST = 'vpn.example.com';
@@ -59,6 +59,7 @@ export const scenarios = {
   busyNext: false,          // next mutation returns exit 7
   hostMisconfigured: false, // every call except version returns exit 6
   protocolMismatch: false,  // version reports protocol 2
+  helperOutdated: false,    // version reports an older helper than the image ships
   subnetFull: false,        // add fails as PiVPN would when no address is free (unverified: not run)
   mutationDelayMs: 1800,    // real worst case is about 45 s
 };
@@ -230,7 +231,7 @@ function find(name) {
 
 function actionVersion() {
   return {
-    helper_version: HELPER_VERSION,
+    helper_version: scenarios.helperOutdated ? '0.1.3' : HELPER_VERSION,
     protocol: scenarios.protocolMismatch ? 2 : PROTOCOL,
     backend: 'pivpn',
     interface: IFACE,

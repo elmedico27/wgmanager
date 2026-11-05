@@ -9,6 +9,7 @@ import { Store } from '../src/store.js';
 import { MockTransport } from '../src/transport.js';
 import { createApp } from '../src/app.js';
 import { loadUi } from '../src/http.js';
+import { readHelperVersion } from '../src/bundled.js';
 import { Admin } from '../src/auth.js';
 
 const mock = await import('../../web/src/mock/helper.js');
@@ -28,7 +29,7 @@ async function start({ transport, clock } = {}) {
   const logs = [];
   const t = { now: Date.parse('2026-10-22T12:00:00Z') };
   const tr = transport ?? new MockTransport(cfg, mock, { delayMs: 0 });
-  const app = createApp({ cfg, store, transport: tr, ui: loadUi(uiDir), log: (l) => logs.push(l), now: clock ?? (() => t.now) });
+  const app = createApp({ cfg, store, transport: tr, ui: loadUi(uiDir), log: (l) => logs.push(l), now: clock ?? (() => t.now), bundledHelper: '0.1.4' });
   app.admin.announceSetupCode();
   const server = http.createServer(app.handle);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -350,6 +351,19 @@ test('settings show the SSH target and the public key', async () => {
   assert.deepEqual(r.json.data.ssh, { host: '172.29.88.1', port: 22, user: 'wgweb' });
   assert.match(r.json.data.publicKey, /^ssh-ed25519 /);
   assert.deepEqual(r.json.data.allowFrom, ['127.0.0.1', '::1', '172.29.88.0/29']);
+  assert.equal(r.json.data.bundledHelper, '0.1.4');
+});
+
+test('bundled helper version is read from the helper file', () => {
+  const real = readHelperVersion();
+  assert.match(real, /^[0-9]+\.[0-9]+\.[0-9]+$/);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wgm-ver-'));
+  const f = path.join(dir, 'wgmanager-helper');
+  fs.writeFileSync(f, '#!/usr/bin/python3 -I\nHELPER_VERSION = "1.2.3"\n');
+  assert.equal(readHelperVersion(f), '1.2.3');
+  fs.writeFileSync(f, 'HELPER_VERSION = "1.2.3; rm -rf"\n');
+  assert.equal(readHelperVersion(f), null);
+  assert.equal(readHelperVersion(path.join(dir, 'missing')), null);
 });
 
 test('config: bad environment values are refused', () => {

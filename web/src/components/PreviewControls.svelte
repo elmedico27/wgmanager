@@ -26,6 +26,7 @@
         { key: 'interfaceDown', label: 'Interface down', reconnect: false },
         { key: 'hostMisconfigured', label: 'Host misconfigured (exit 6)' },
         { key: 'protocolMismatch', label: 'Helper protocol mismatch', reconnect: true },
+        { key: 'helperOutdated', label: 'Helper out of date', reconnect: true },
         { key: 'firstRun', label: 'First run (key not installed)', reconnect: true, app: true },
         { key: 'noPassword', label: 'Fresh install (no password yet)', reboot: true, app: true },
         { key: 'hostKeyChanged', label: 'Server identity changed', reconnect: true, app: true },
