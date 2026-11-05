@@ -10,9 +10,9 @@
   <p align="center">
     A web GUI for managing the clients of a PiVPN WireGuard server.
     <br />
-    <a href="https://elmedico27.github.io/wgmanager/"><strong>Explore the docs »</strong></a>
     <br />
-    <br />
+    <a href="https://elmedico27.github.io/wgmanager/">Documentation</a>
+    &middot;
     <a href="https://wgmdemo.pages.dev">View Demo</a>
     &middot;
     <a href="https://github.com/elmedico27/wgmanager/issues/new?labels=bug">Report Bug</a>
@@ -48,18 +48,20 @@
 
 ## About The Project
 
-Add, delete, enable, and disable your WireGuard clients, all without opening a terminal.  Show a client's QR code, download its config file, and see who is connected.
-
-WG Manager is a **Docker web app** and a **small helper** on the server that runs PiVPN commands under a limited-purpose user.  See more about [how it works](https://elmedico27.github.io/wgmanager/guide/how-it-works).
-
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
   <img alt="WG Manager's client list (sample data)" src="docs/screenshot-light.png">
 </picture>
 
+Add, delete, enable, and disable your WireGuard clients, all without opening a terminal.  Show a client's QR code, download its config file, and see who is connected.
+
+WG Manager is a **Docker web app** and a **small helper** on the server that runs PiVPN commands under a limited-purpose user.  See more about [how it works](https://elmedico27.github.io/wgmanager/guide/how-it-works).
+
 ### Built With
 
 [![Svelte](https://img.shields.io/badge/svelte-%23f1413d.svg?style=for-the-badge&logo=svelte&logoColor=white)](https://svelte.dev) [![Vite](https://img.shields.io/badge/vite-%23646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)](https://vite.dev) [![TailwindCSS](https://img.shields.io/badge/tailwindcss-%2338B2AC.svg?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com) [![NodeJS](https://img.shields.io/badge/node.js-6DA55F?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org) [![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://www.python.org) [![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Getting Started
 
