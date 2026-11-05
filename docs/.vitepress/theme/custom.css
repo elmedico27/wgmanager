@@ -1,0 +1,35 @@
+/* Home page: show the hero screenshot large. The default theme sizes the hero
+   image for a logo (a square of at most 20rem with a round glow behind it). */
+.VPHero.has-image .image {
+  margin: 0 0 2rem;
+}
+.VPHero.has-image .image-container {
+  width: 100%;
+  height: auto;
+  transform: none;
+}
+.VPHero.has-image .image-bg {
+  display: none;
+}
+.VPHero.has-image .image-src {
+  position: static;
+  transform: none;
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+  max-height: none;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+}
+
+@media (min-width: 960px) {
+  /* Give the screenshot about half the width instead of a third. */
+  .VPHero.has-image .main {
+    width: 46%;
+  }
+  .VPHero.has-image .image {
+    margin: 0 0 0 3rem;
+    align-self: center;
+  }
+}

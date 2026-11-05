@@ -49,8 +49,8 @@
 ## About The Project
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
-  <img alt="WG Manager's client list (sample data)" src="docs/screenshot-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/public/screenshot-dark.png">
+  <img alt="WG Manager's client list (sample data)" src="docs/public/screenshot-light.png">
 </picture>
 
 Add, delete, enable, and disable your WireGuard clients, all without opening a terminal.  Show a client's QR code, download its config file, and see who is connected.
@@ -60,8 +60,6 @@ WG Manager is a **Docker web app** and a **small helper** on the server that run
 ### Built With
 
 [![Svelte](https://img.shields.io/badge/svelte-%23f1413d.svg?style=for-the-badge&logo=svelte&logoColor=white)](https://svelte.dev) [![Vite](https://img.shields.io/badge/vite-%23646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)](https://vite.dev) [![TailwindCSS](https://img.shields.io/badge/tailwindcss-%2338B2AC.svg?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com) [![NodeJS](https://img.shields.io/badge/node.js-6DA55F?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org) [![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://www.python.org) [![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com)
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Getting Started
 
@@ -133,27 +131,19 @@ docker compose down -v
 
 The `-v` flag deletes the app's data (password, SSH key, confirmed server identity). The config backups in `/var/backups/wgmanager` are kept; add `--purge` to `uninstall` to delete them too.
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
 ## Usage
 
 Open `http://<server-address>:7501` and sign in with your admin password.
 
 **If a change fails,** WG Manager shows a warning on every page until you acknowledge it, with a link to [Recovering from a failed change](https://elmedico27.github.io/wgmanager/guide/recovery). For anything else, start with [Troubleshooting](https://elmedico27.github.io/wgmanager/guide/troubleshooting).
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
 ## Contributing
 
 Bug reports and feature ideas are welcome in [Issues](https://github.com/elmedico27/wgmanager/issues). Bugs are fixed as time allows; feature ideas are considered for the roadmap but may not be built. How to build, run and test the code is described in [Contributing](https://elmedico27.github.io/wgmanager/development/). Changes are listed in the [changelog](CHANGELOG.md).
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
 ## License
 
 Distributed under the GPL-3.0 license. See [LICENSE](LICENSE).
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Acknowledgments
 

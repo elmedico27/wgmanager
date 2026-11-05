@@ -5,6 +5,10 @@ hero:
   name: WG Manager
   text: A web UI for your PiVPN WireGuard server
   tagline: Add, enable, disable and delete clients, show QR codes and download configs from your browser.
+  image:
+    light: /screenshot-light.png
+    dark: /screenshot-dark.png
+    alt: WG Manager's client list (sample data)
   actions:
     - theme: brand
       text: Get started
@@ -17,10 +21,10 @@ hero:
       link: https://github.com/elmedico27/wgmanager
 
 features:
-  - title: The web app
-    details: Runs in Docker. It is the page you open in your browser, and it never touches WireGuard itself.
-  - title: A small helper
-    details: One root-owned Python file on your server. It runs PiVPN's own tools and checks every change really happened.
-  - title: A locked-down SSH key
-    details: Connects the two. It can start the helper and nothing else.
+  - title: 🔧 Manage WireGuard clients
+    details: Add, delete, enable, and disable clients -- all without opening a terminal.
+  - title: 📲 Easily connect devices
+    details: Display QR codes or download config files for easy client onboarding.
+  - title: 🔒 Security focused
+    details: Through a helper app, the UI can only run seven PiVPN commands, nothing else.
 ---
