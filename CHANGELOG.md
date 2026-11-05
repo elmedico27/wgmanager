@@ -11,6 +11,11 @@ the helper too.
 
 ## [Unreleased]
 
+### Changed
+
+- The live demo moved to https://wgmdemo.pages.dev and is now built directly
+  from this repository's `web/` folder.
+
 ## [0.1.3] - 2026-11-04
 
 Ships helper 0.1.4.

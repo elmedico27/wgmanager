@@ -19,7 +19,7 @@ export default defineConfig({
       { text: 'Guide', link: '/guide/getting-started' },
       { text: 'Technical details', link: '/guide/how-it-works' },
       { text: 'Contributing', link: '/development/' },
-      { text: 'Demo', link: 'https://wgmanager-demo.pages.dev' }
+      { text: 'Demo', link: 'https://wgmdemo.pages.dev' }
     ],
     sidebar: [
       {

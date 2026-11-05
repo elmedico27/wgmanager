@@ -35,6 +35,8 @@ In `web/`, after `npm install`:
 - `npm run build`: the real app into `dist/`. The mock is not included.
 - `npm run build:demo`: the public demo site into `dist-demo/`: the mock built in, and each visitor's changes kept only in their own browser tab.
 
+The [live demo](https://wgmdemo.pages.dev) is built by Cloudflare Pages straight from this repository: root directory `web`, build command `npm run build:demo`, output `dist-demo`, Node 26 (`NODE_VERSION`). Every push to `master` rebuilds it.
+
 ## Backend
 
 In `server/`:

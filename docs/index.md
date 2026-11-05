@@ -11,7 +11,7 @@ hero:
       link: /guide/getting-started
     - theme: alt
       text: Try the demo
-      link: https://wgmanager-demo.pages.dev
+      link: https://wgmdemo.pages.dev
     - theme: alt
       text: View on GitHub
       link: https://github.com/elmedico27/wgmanager
