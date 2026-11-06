@@ -45,6 +45,10 @@
 //          Unacknowledged warnings for changes that failed or may be incomplete
 //          (helper exit 5, or no answer within 60 s). Kept in the data volume.
 //   DELETE /api/failures/:id            acknowledge one
+//   GET    /api/notes                   -> {notes: {<public key>: text}, unreadable}
+//   POST   /api/notes   {public_key, note}  save one note ('' removes it; max 500)
+//          Client notes are the app's own data (notes.json in its volume), not
+//          the host's; keyed by public key. Deleting a client in the app drops its note.
 //
 // Requests made by the automatic 15 s refresh carry X-WGM-Background: 1 and do
 // not count as use for the 6-hour idle sign-out.
@@ -145,6 +149,8 @@ export const api = {
   list: (o) => call('GET', '/api/clients', undefined, o),
   failures: (o) => call('GET', '/api/failures', undefined, o),
   ackFailure: (id) => call('DELETE', `/api/failures/${enc(id)}`),
+  notes: (o) => call('GET', '/api/notes', undefined, o),
+  saveNote: (public_key, note) => call('POST', '/api/notes', { public_key, note }),
   add: (name) => call('POST', '/api/clients', { name }),
   remove: (name) => call('DELETE', `/api/clients/${enc(name)}`),
   enable: (name) => call('POST', `/api/clients/${enc(name)}/enable`),

@@ -6,7 +6,8 @@
   import StatusDot from './StatusDot.svelte';
   import SessionMeter from './SessionMeter.svelte';
   import ConfigView from './ConfigView.svelte';
-  import { app, mutate, notify, isFlagged } from '../lib/store.svelte.js';
+  import NoteEditor from './NoteEditor.svelte';
+  import { app, mutate, notify, isFlagged, leavePanel } from '../lib/store.svelte.js';
   import { tick } from 'svelte';
   import { bytes, status, ago, date, errorText, unmanageableReason, isSafeName } from '../lib/format.js';
 
@@ -40,12 +41,42 @@
   });
 
   function close() {
-    app.selected = null;
+    leavePanel(() => (app.selected = null));
   }
 
   function onkey(e) {
-    if (e.key === 'Escape' && app.selected) close();
+    if (e.key !== 'Escape') return;
+    if (app.discard) app.discard = null; // Escape on the question means "keep editing"
+    else if (app.selected) close();
   }
+
+  // Reloading or closing the tab with an unsaved note: the browser's own prompt.
+  function onbeforeunload(e) {
+    if (!app.noteDirty) return;
+    e.preventDefault();
+    e.returnValue = ''; // older browsers need this as well
+  }
+
+  function discardAndGo() {
+    const step = app.discard;
+    app.discard = null;
+    app.noteDirty = false;
+    step?.();
+  }
+
+  // The question takes focus; answering returns it to the note.
+  let keepButton = $state(null);
+  let noteFocus = null;
+  $effect(() => {
+    if (app.discard) {
+      noteFocus = document.activeElement;
+      tick().then(() => keepButton?.focus());
+    } else if (noteFocus) {
+      const el = noteFocus;
+      noteFocus = null;
+      if (el.isConnected) el.focus();
+    }
+  });
 
   async function run(action) {
     const target = name;
@@ -55,7 +86,8 @@
     if (r.ok) {
       if (action === 'remove') {
         notify(`Deleted ${target}`);
-        if (app.selected === target) close();
+        // The note went with the client, so there is nothing to ask about.
+        if (app.selected === target) app.selected = null;
       } else if (r.data.changed === false) {
         notify(`${target} was already ${action}d`);
       } else {
@@ -75,7 +107,7 @@
   let isEnabled = $derived(client?.enabled === true);
 </script>
 
-<svelte:window onkeydown={onkey} />
+<svelte:window onkeydown={onkey} {onbeforeunload} />
 
 {#if name}
   <div class="fixed inset-0 z-40 bg-[var(--scrim)]" transition:fade={{ duration: 160 }} onclick={close} aria-hidden="true"></div>
@@ -104,6 +136,7 @@
       {:else if !client.manageable}
         <!-- reachable only by address (/clients/NAME); cards and rows don't open these -->
         <p class="text-sm text-ink-2">{unmanageableReason(client, isSafeName)}</p>
+        {#key client.public_key}<NoteEditor publicKey={client.public_key} {name} />{/key}
       {:else}
         {#if isFlagged(name)}
           <div class="rounded-lg border border-warn-line bg-warn-soft px-3 py-2.5 text-sm">
@@ -157,10 +190,12 @@
                 Public key
                 <button class="text-xs text-accent hover:underline" onclick={copyKey}>Copy</button>
               </dt>
-              <dd class="font-mono text-[12.5px] break-all text-ink-2 select-all">{client.public_key}</dd>
+              <dd class="font-mono text-[12.5px] break-all select-all">{client.public_key}</dd>
             </div>
           </dl>
         </section>
+
+        {#key client.public_key}<NoteEditor publicKey={client.public_key} {name} />{/key}
 
         <section class="flex flex-col gap-3">
           <h3 class="text-sm font-semibold">Manage</h3>
@@ -219,5 +254,20 @@
         </section>
       {/if}
     </div>
+
+    {#if app.discard}
+      <div class="absolute inset-0 z-10 grid place-items-center bg-[var(--scrim)] p-5" transition:fade={{ duration: 120 }}>
+        <div class="flex w-full max-w-sm flex-col gap-4 rounded-xl border border-line bg-bg p-5 shadow-lift" role="alertdialog" aria-modal="true" aria-labelledby="discard-title" aria-describedby="discard-text">
+          <div class="flex flex-col gap-1">
+            <h3 id="discard-title" class="font-semibold">Discard unsaved note?</h3>
+            <p id="discard-text" class="text-sm text-ink-2">Your changes to the note for {name} have not been saved.</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button class="btn btn-danger" onclick={discardAndGo}>Discard</button>
+            <button bind:this={keepButton} class="btn btn-ghost" onclick={() => (app.discard = null)}>Keep editing</button>
+          </div>
+        </div>
+      </div>
+    {/if}
   </div>
 {/if}

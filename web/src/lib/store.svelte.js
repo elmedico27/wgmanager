@@ -34,6 +34,10 @@ export const app = $state({
   adding: false,
   pending: {}, // name -> action in flight
   failures: [], // unacknowledged failure warnings (from the server, plus local ones)
+  notes: {}, // client notes: public key -> text (the app's own data, see api.js)
+  notesUnreadable: false, // notes.json is damaged on the server; saving is refused
+  noteDirty: false, // the open panel has an unsaved note
+  discard: null, // pending "discard unsaved note?" question: the step to take if the answer is yes
   notice: null, // short-lived message
   signedOutNotice: null, // why the login screen is showing, if not obvious
   layout: 'cards', // cards | list
@@ -73,6 +77,7 @@ function resetSessionState() {
   Object.assign(app, {
     view: 'clients', list: null, version: null, settings: null, listError: null, hostError: null,
     hostKey: null, lastRefresh: 0, selected: null, adding: false, pending: {}, failures: [],
+    notes: {}, notesUnreadable: false, noteDirty: false, discard: null,
   });
   // Signing in again returns to the page in the address bar.
   const r = currentRoute();
@@ -117,7 +122,7 @@ export async function connect({ background = false } = {}) {
     app.phase = SETUP_CODES.includes(code) ? 'firstrun' : 'ready';
     if (app.phase === 'ready') {
       if (code === 'hostkey_changed') app.view = 'host';
-      await loadFailures(background);
+      await Promise.all([loadFailures(background), loadNotes(background)]);
       startPolling();
     }
     return v;
@@ -143,7 +148,7 @@ export async function refresh({ background = false } = {}) {
   if (app.hostError) return;
   const seq = ++listSeq;
   const mine = epoch;
-  const [r] = await Promise.all([api.list({ background }), loadFailures(background)]);
+  const [r] = await Promise.all([api.list({ background }), loadFailures(background), loadNotes(background)]);
   if (seq !== listSeq || mine !== epoch) return; // a newer refresh answered, or signed out
   app.now = Date.now() / 1000;
   if (!r.ok) {
@@ -168,6 +173,34 @@ async function loadFailures(background) {
     const local = app.failures.filter((x) => x.local);
     app.failures = [...f.data.failures, ...local];
   }
+}
+
+async function loadNotes(background) {
+  const mine = epoch;
+  const n = await api.notes({ background });
+  if (n.ok && mine === epoch) {
+    app.notes = n.data.notes;
+    app.notesUnreadable = n.data.unreadable === true;
+  }
+}
+
+/** Save one client's note ('' removes it). */
+export async function saveNote(publicKey, text) {
+  const r = await api.saveNote(publicKey, text);
+  if (r.ok) {
+    const next = { ...app.notes };
+    if (r.data.note) next[publicKey] = r.data.note;
+    else delete next[publicKey];
+    app.notes = next;
+  }
+  return r;
+}
+
+/** Take a step that closes or changes the client panel; asks first when the
+ *  note has unsaved changes. */
+export function leavePanel(step) {
+  if (app.noteDirty) app.discard = step;
+  else step();
 }
 
 // --- polling: one request at a time, never overlapping --------------------------

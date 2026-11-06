@@ -1,5 +1,5 @@
 <script>
-  import { app, boot } from './lib/store.svelte.js';
+  import { app, boot, leavePanel } from './lib/store.svelte.js';
   import { MOCK, DEMO } from './lib/api.js';
   import Sidebar from './components/Sidebar.svelte';
   import FailureBanner from './components/FailureBanner.svelte';
@@ -43,8 +43,15 @@
         location.reload(); // into or out of the 404 page: start clean
         return;
       }
-      app.view = r.view;
-      app.selected = r.selected;
+      if (app.noteDirty && (r.view !== app.view || r.selected !== app.selected)) {
+        // The browser has already moved; put the panel's address back and ask
+        // first. Discarding then navigates as a new entry, not a step back.
+        history.pushState(null, '', pathFor(app.view, app.selected));
+      }
+      leavePanel(() => {
+        app.view = r.view;
+        app.selected = r.selected;
+      });
     };
     window.addEventListener('popstate', onpop);
     return () => window.removeEventListener('popstate', onpop);

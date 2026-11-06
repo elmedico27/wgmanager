@@ -12,6 +12,7 @@
   let pending = $derived(app.pending[client.name]);
   let flagged = $derived(isFlagged(client.name));
   let selected = $derived(app.selected === client.name);
+  let note = $derived(app.notes[client.public_key]);
   const pendingWord = { enable: 'Enabling', disable: 'Disabling', remove: 'Deleting', add: 'Adding' };
 </script>
 
@@ -26,7 +27,10 @@
     <div class="flex items-start gap-3">
       <div class="pt-[7px]"><StatusDot tone={st.tone} pulse={conn?.connected} label={conn?.connected ? `${st.label}, connected now` : st.label} /></div>
       <div class="min-w-0 flex-1">
-        <div class="truncate font-semibold">{client.name}</div>
+        <div class="flex min-w-0 items-center gap-1.5">
+          <span class="truncate font-semibold">{client.name}</span>
+          {#if note}{@render noteMark(note)}{/if}
+        </div>
         <div class="font-mono text-[13px] text-ink-2">{client.address}</div>
       </div>
       {#if pending}
@@ -67,7 +71,10 @@
     <div class="flex items-start gap-3">
       <div class="pt-[7px]"><StatusDot tone="warn" label="Managed outside wgmanager" /></div>
       <div class="min-w-0 flex-1">
-        <div class="truncate font-semibold text-ink-2">{client.name}</div>
+        <div class="flex min-w-0 items-center gap-1.5">
+          <span class="truncate font-semibold text-ink-2">{client.name}</span>
+          {#if note}{@render noteMark(note)}{/if}
+        </div>
         <div class="font-mono text-[13px] text-ink-3">{client.address}</div>
       </div>
       <Icon name="lock" size={16} class="mt-1 text-ink-3" />
@@ -75,3 +82,7 @@
     <p class="text-[13px] text-ink-2">{unmanageableReason(client, isSafeName)}</p>
   </div>
 {/if}
+
+{#snippet noteMark(text)}
+  <span class="shrink-0 text-ink-3" title={text} role="img" aria-label="Note: {text}"><Icon name="note" size={14} /></span>
+{/snippet}

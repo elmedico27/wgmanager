@@ -6,6 +6,7 @@ import qrcode from 'qrcode-generator';
 import crypto from 'node:crypto';
 import { Admin, Sessions, FailureLimiter, csrfMatches, passwordProblem } from './auth.js';
 import { securityHeaders, noStore, sendJson, parseCookies, readJson, serveUi, serveIndex } from './http.js';
+import { Notes, cleanNote, isPublicKey } from './notes.js';
 
 export const PROTOCOL = 1;
 const COOKIE = 'wgm_sid';
@@ -36,7 +37,12 @@ export function createApp({ cfg, store, transport, ui = new Map(), log = console
   const admin = new Admin(store, log);
   const sessions = new Sessions(cfg.session, now);
   const limiter = new FailureLimiter({}, now);
+  const notes = new Notes(store, log);
   let settingUp = false;
+  // Name -> public key from the last good `list`, so a delete made in the app
+  // can drop that client's note (the helper's `remove` answer has no key). A
+  // client the app has not listed yet keeps its note, like one removed outside the app.
+  let keysByName = new Map();
 
   function clientIp(req) {
     if (cfg.trustProxy) {
@@ -129,8 +135,16 @@ export function createApp({ cfg, store, transport, ui = new Map(), log = console
   }
 
   async function mutate(res, action, name) {
+    const key = action === 'remove' ? keysByName.get(name) : undefined;
     const body = await helper(name ? `${action} ${name}` : action, { mutation: true });
     const result = body.ok ? 'ok' : `error:${body.error?.code}`;
+    if (body.ok && key) {
+      try {
+        notes.set(key, '');
+      } catch (e) {
+        log(`wgmanager: could not remove the note of deleted client ${name}: ${e.message}`);
+      }
+    }
     log(`wgmanager: action=${action} client=${name ?? '-'} result=${result}`);
     // Exit 5 and our own timeout leave the outcome uncertain: keep a warning
     // every browser sees until someone acknowledges it.
@@ -251,7 +265,27 @@ export function createApp({ cfg, store, transport, ui = new Map(), log = console
     }
 
     if (url === '/api/version' && method === 'GET') return reply(res, await helper('version'));
-    if (url === '/api/clients' && method === 'GET') return reply(res, await helper('list'));
+    if (url === '/api/clients' && method === 'GET') {
+      const body = await helper('list');
+      if (body.ok && Array.isArray(body.data?.clients)) {
+        keysByName = new Map(body.data.clients.map((c) => [c.name, c.public_key]));
+      }
+      return reply(res, body);
+    }
+    if (url === '/api/notes' && method === 'GET') {
+      const r = notes.read();
+      return reply(res, { ok: true, data: { notes: r.notes, unreadable: !!r.unreadable } });
+    }
+    if (url === '/api/notes' && method === 'POST') {
+      const body = await readJson(req);
+      if (!isPublicKey(body.public_key)) return reply(res, err('invalid_request', 'invalid public key'));
+      const c = cleanNote(body.note);
+      if (c.problem) return reply(res, err('invalid_request', c.problem));
+      const problem = notes.set(body.public_key, c.text);
+      if (problem === 'unreadable') return reply(res, err('server_error', 'notes.json is unreadable; see the log'));
+      if (problem === 'full') return reply(res, err('invalid_request', 'too many notes'));
+      return reply(res, { ok: true, data: { public_key: body.public_key, note: c.text } });
+    }
     if (url === '/api/clients' && method === 'POST') {
       const body = await readJson(req);
       if (!isSafeName(body.name)) return reply(res, err('invalid_request', 'invalid client name'));

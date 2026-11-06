@@ -3,7 +3,7 @@
 // passing helper envelopes through unchanged, and adds the app-level states the
 // backend owns: login, first run (helper unreachable), SSH timeout.
 
-import { run, scenarios as helperScenarios, snapshot, restore, HELPER_VERSION } from './helper.js';
+import { run, scenarios as helperScenarios, snapshot, restore, publicKeyOf, HELPER_VERSION } from './helper.js';
 import qrcode from 'qrcode-generator';
 
 // As in the real backend: UTF-8, not the library's 8-bit truncation.
@@ -22,6 +22,18 @@ export const appScenarios = {
 
 // Unacknowledged failure warnings, as the backend keeps them in failures.json.
 let failures = [];
+
+// Client notes by public key, as the backend keeps them in notes.json. Two
+// examples so the preview and the demo show the note icon.
+const NOTE_MAX = 500;
+let notes = {};
+for (const [name, text] of [
+  ['Dave_Router', 'Travel router. Stays enabled while we are on the road.'],
+  ['Frank_Desktop', 'Disabled while the desktop is in for repair.\nEnable again when it is back.'],
+]) {
+  const key = publicKeyOf(name);
+  if (key) notes[key] = text;
+}
 
 // Fake ED25519 host-key fingerprints in OpenSSH's SHA256 format.
 const OFFERED_FP = 'SHA256:q3Vt8mK2pXw7LhN4bRz9cYdF1sJ6uE0aTgW5oQiHnBk';
@@ -62,6 +74,7 @@ function loadDemo() {
     authenticated = s.authenticated === true;
     appScenarios.hostKeyPinned = s.hostKeyPinned !== false;
     if (s.pinned) pinned = s.pinned;
+    if (s.notes && typeof s.notes === 'object') notes = s.notes;
   } catch {
     // storage blocked or unreadable: start clean
   }
@@ -71,7 +84,7 @@ function saveDemo() {
   try {
     sessionStorage.setItem(
       DEMO_KEY,
-      JSON.stringify({ helper: snapshot(), authenticated, hostKeyPinned: appScenarios.hostKeyPinned, pinned }),
+      JSON.stringify({ helper: snapshot(), authenticated, hostKeyPinned: appScenarios.hostKeyPinned, pinned, notes }),
     );
   } catch {
     // storage blocked or full: the demo still works, it just forgets on refresh
@@ -161,13 +174,32 @@ async function route(method, path, body) {
     failures = failures.filter((f) => f.id !== decodeURIComponent(fm[1]));
     return { ok: true, data: { acknowledged: fm[1] } };
   }
+  if (path === '/api/notes' && method === 'GET') return { ok: true, data: { notes, unreadable: false } };
+  if (path === '/api/notes' && method === 'POST') {
+    if (typeof body?.public_key !== 'string' || typeof body?.note !== 'string') return appError('invalid_request', 'invalid note');
+    const text = body.note.replace(/\r\n?/g, '\n').trim();
+    if (text.length > NOTE_MAX) return appError('invalid_request', `note is longer than ${NOTE_MAX} characters`);
+    notes = { ...notes };
+    if (text) notes[body.public_key] = text;
+    else delete notes[body.public_key];
+    return { ok: true, data: { public_key: body.public_key, note: text } };
+  }
   if (path === '/api/version') return helper('version');
   if (path === '/api/clients' && method === 'GET') return helper('list');
   if (path === '/api/clients' && method === 'POST') return mutation(`add ${body.name}`);
 
   if (m) {
     const name = decodeURIComponent(m[1]);
-    if (method === 'DELETE' && !m[2]) return mutation(`remove ${name}`);
+    if (method === 'DELETE' && !m[2]) {
+      // Like the backend: a delete made in the app takes the client's note with it.
+      const key = publicKeyOf(name);
+      const r = await mutation(`remove ${name}`);
+      if (r.ok && key && key in notes) {
+        notes = { ...notes };
+        delete notes[key];
+      }
+      return r;
+    }
     if (method === 'POST' && (m[2] === 'enable' || m[2] === 'disable')) return mutation(`${m[2]} ${name}`);
     if (method === 'GET' && m[2] === 'config') return helper(`get-config ${name}`);
   }

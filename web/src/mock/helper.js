@@ -147,6 +147,11 @@ export function restore(s) {
   if (typeof s.at === 'number') lastTick = s.at; // the next tick covers the time away
 }
 
+/** Public key of a listed client (the mock backend keys its notes by it). */
+export function publicKeyOf(name) {
+  return allClients().find((c) => c.name === name)?.public_key ?? null;
+}
+
 function allClients() {
   const out = [...clients];
   for (const key of ['unmanageable', 'inconsistent', 'bigCounters']) {

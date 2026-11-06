@@ -476,3 +476,80 @@ test('behind a trusted proxy, Origin may match X-Forwarded-Host', async () => {
   assert.equal(r.json.ok, true);
   ctx.cfg.trustProxy = false;
 });
+
+// --- client notes -------------------------------------------------------------------
+
+const KEY_A = 'A'.repeat(42) + 'E=';
+
+test('notes: save, read back, clean up text, empty removes', async () => {
+  const cl = await signedIn();
+  let r = await cl.req('GET', '/api/notes');
+  assert.deepEqual(r.json.data, { notes: {}, unreadable: false });
+  r = await cl.req('POST', '/api/notes', { public_key: KEY_A, note: '  Work laptop\r\nsecond line\t ' });
+  assert.equal(r.json.ok, true);
+  assert.equal(r.json.data.note, 'Work laptop\nsecond line');
+  r = await cl.req('GET', '/api/notes');
+  assert.deepEqual(r.json.data.notes, { [KEY_A]: 'Work laptop\nsecond line' });
+  const st = fs.statSync(path.join(ctx.cfg.dataDir, 'notes.json'));
+  assert.equal(st.mode & 0o777, 0o600);
+  r = await cl.req('POST', '/api/notes', { public_key: KEY_A, note: '   ' });
+  assert.equal(r.json.data.note, '');
+  r = await cl.req('GET', '/api/notes');
+  assert.deepEqual(r.json.data.notes, {});
+  assert.doesNotMatch(ctx.logs.join('\n'), /Work laptop/);
+});
+
+test('notes: limits and bad input refused', async () => {
+  const cl = await signedIn();
+  let r = await cl.req('POST', '/api/notes', { public_key: KEY_A, note: 'x'.repeat(500) });
+  assert.equal(r.json.ok, true);
+  r = await cl.req('POST', '/api/notes', { public_key: KEY_A, note: 'x'.repeat(501) });
+  assert.equal(r.res.status, 400);
+  assert.match(r.json.error.message, /500/);
+  for (const bad of [{ public_key: 'short=', note: 'x' }, { public_key: '__proto__', note: 'x' }, { public_key: KEY_A, note: 5 }, { public_key: KEY_A, note: 'bell\u0007' }]) {
+    r = await cl.req('POST', '/api/notes', bad);
+    assert.equal(r.json.error.code, 'invalid_request', JSON.stringify(bad));
+  }
+  // signed out, and without the CSRF token
+  r = await client().req('GET', '/api/notes');
+  assert.equal(r.res.status, 401);
+  r = await cl.req('POST', '/api/notes', { public_key: KEY_A, note: 'x' }, { 'X-CSRF-Token': 'nope' });
+  assert.equal(r.json.error.code, 'csrf');
+});
+
+test('notes: a damaged notes.json is left alone and blocks saving', async () => {
+  const cl = await signedIn();
+  fs.writeFileSync(path.join(ctx.cfg.dataDir, 'notes.json'), '{not json');
+  let r = await cl.req('GET', '/api/notes');
+  assert.deepEqual(r.json.data, { notes: {}, unreadable: true });
+  await cl.req('GET', '/api/notes');
+  assert.equal(ctx.logs.filter((l) => /notes\.json is unreadable/.test(l)).length, 1);
+  r = await cl.req('POST', '/api/notes', { public_key: KEY_A, note: 'x' });
+  assert.equal(r.json.error.code, 'server_error');
+  assert.equal(fs.readFileSync(path.join(ctx.cfg.dataDir, 'notes.json'), 'utf8'), '{not json');
+});
+
+test('notes: deleting a client in the app removes its note; others stay', async () => {
+  const cl = await signedIn();
+  const list = (await cl.req('GET', '/api/clients')).json.data.clients.filter((c) => c.manageable);
+  const [a, b] = list;
+  await cl.req('POST', '/api/notes', { public_key: a.public_key, note: 'goes' });
+  await cl.req('POST', '/api/notes', { public_key: b.public_key, note: 'stays' });
+  const orphan = 'B'.repeat(42) + 'A=';
+  await cl.req('POST', '/api/notes', { public_key: orphan, note: 'removed outside the app' });
+  const r = await cl.req('DELETE', `/api/clients/${a.name}`);
+  assert.equal(r.json.ok, true);
+  const n = (await cl.req('GET', '/api/notes')).json.data.notes;
+  assert.deepEqual(n, { [b.public_key]: 'stays', [orphan]: 'removed outside the app' });
+});
+
+test('notes: a failed delete keeps the note', async () => {
+  const cl = await signedIn();
+  const [a] = (await cl.req('GET', '/api/clients')).json.data.clients.filter((c) => c.manageable);
+  await cl.req('POST', '/api/notes', { public_key: a.public_key, note: 'keep me' });
+  mock.scenarios.failNextMutation = true;
+  const r = await cl.req('DELETE', `/api/clients/${a.name}`);
+  assert.equal(r.json.ok, false);
+  const n = (await cl.req('GET', '/api/notes')).json.data.notes;
+  assert.equal(n[a.public_key], 'keep me');
+});

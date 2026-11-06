@@ -16,6 +16,14 @@ the helper too.
 - A **Helper update available** notice at the top of every page when the helper
   on the server is older than the one the app comes with. It shows the update
   command and clears itself once the helper is current.
+- **Client notes:** a Notes box in each client's panel (up to 500 characters),
+  with a note icon on the client's card and list row. Notes are kept in the
+  app's data volume (`notes.json`), not on the server, and are deleted with the
+  client when you delete it in WG Manager.
+
+### Fixed
+
+- The client panel's public key is shown in the same colour as the other details.
 
 ### Changed
 
