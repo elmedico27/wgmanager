@@ -69,7 +69,7 @@
         <div class="flex justify-between gap-4 py-2"><dt class="text-ink-2">Listen port</dt><dd class="font-mono">{iface.listen_port ?? '—'} {#if iface.listen_port}<span class="font-sans text-ink-3">UDP</span>{/if}</dd></div>
         <div class="flex flex-col gap-1 py-2">
           <dt class="flex justify-between text-ink-2">Server public key {#if iface.public_key}<button class="text-xs text-accent hover:underline" onclick={() => copy(iface.public_key)}>Copy</button>{/if}</dt>
-          <dd class="font-mono text-[12.5px] break-all text-ink-2">{iface.public_key ?? 'Not available while the interface is down'}</dd>
+          <dd class="font-mono text-[12.5px] break-all {iface.public_key ? 'select-all' : 'text-ink-2'}">{iface.public_key ?? 'Not available while the interface is down'}</dd>
         </div>
         <div class="flex justify-between gap-4 py-2"><dt class="text-ink-2">Clients</dt><dd class="tabular">{app.list.clients.length}</dd></div>
       </dl>

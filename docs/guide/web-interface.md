@@ -8,6 +8,9 @@ The sidebar (a bar along the bottom on phones) has three pages: **Clients**, **H
 
 ## Clients
 
+![The Clients page in card view (sample data)](/screenshot-light.png){.screenshot .only-light}
+![The Clients page in card view (sample data)](/screenshot-dark.png){.screenshot .only-dark}
+
 This page lists your VPN clients as cards or as a list; switch between them with the buttons at the top. It refreshes itself every 15 seconds while the tab is visible.
 
 - **Add a client:** click **Add client**, enter a name and confirm. The new client's QR code and config download appear straight away. Scan the QR code with the WireGuard app on a phone, or download the config file for a computer.
@@ -35,9 +38,15 @@ If the WireGuard interface is down, **Add client** and **Enable** are switched o
 
 ## Host
 
+![The Host page (sample data)](/screenshot-host-light.png){.screenshot .only-light}
+![The Host page (sample data)](/screenshot-host-dark.png){.screenshot .only-dark}
+
 Shows the state of the server side: the WireGuard interface (name, port, public key, number of clients), the helper (version, protocol, backend and the address it was reached at) and the PiVPN scripts it runs, with a SHA-256 hash of each. Warnings from the server appear here too.
 
 ## Settings
+
+![The Settings page (sample data)](/screenshot-settings-light.png){.screenshot .only-light}
+![The Settings page (sample data)](/screenshot-settings-dark.png){.screenshot .only-dark}
 
 - **Appearance:** follow your device, light or dark.
 - **Admin password:** change it by entering the current one and a new one. This signs out every other browser.

@@ -33,3 +33,17 @@
     align-self: center;
   }
 }
+
+/* Screenshots in guide pages: one image per theme, framed like the home page's. */
+html.dark .only-light,
+html:not(.dark) .only-dark {
+  display: none;
+}
+.vp-doc img.screenshot {
+  width: 100%;
+  height: auto;
+  margin: 16px 0 24px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}

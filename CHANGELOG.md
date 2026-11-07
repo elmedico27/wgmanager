@@ -11,6 +11,10 @@ the helper too.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-06
+
+Ships helper 0.1.4.
+
 ### Added
 
 - A **Helper update available** notice at the top of every page when the helper
@@ -23,6 +27,8 @@ the helper too.
 - **Search** on the Clients page: a magnifying-glass button opens a search box
   that filters clients by name, address or note. The filter stays on (shown by
   a dot on the button) until you clear it, reload or sign out.
+- Screenshots of the Clients, Host and Settings pages on the documentation
+  site's Web interface page, in light and dark.
 
 ### Changed
 
@@ -36,7 +42,8 @@ the helper too.
 
 ### Fixed
 
-- The client panel's public key is shown in the same colour as the other details.
+- Public keys in the client panel and on the Host page are shown in the same
+  colour as the other details.
 
 ## [0.1.3] - 2026-11-04
 
@@ -180,7 +187,8 @@ Verified from source, not run:
   one line per entry, and sshd matches each entry on its own with `*` and `?`
   wildcards only (OpenSSH 10.0p2).
 
-[Unreleased]: https://github.com/elmedico27/wgmanager/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/elmedico27/wgmanager/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/elmedico27/wgmanager/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/elmedico27/wgmanager/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/elmedico27/wgmanager/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/elmedico27/wgmanager/compare/v0.1.0...v0.1.1

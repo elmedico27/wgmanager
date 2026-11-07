@@ -34,6 +34,7 @@ In `web/`, after `npm install`:
 - `npm run dev:real`: the UI dev server against a real backend on port 7501 (see [Backend](#backend)). Requests to `/api` are passed through to it.
 - `npm run build`: the real app into `dist/`. The mock is not included.
 - `npm run build:demo`: the public demo site into `dist-demo/`: the mock built in, and each visitor's changes kept only in their own browser tab.
+- `npm test`: unit tests for the UI's logic that runs without a browser (for now, the client search filter).
 
 The [live demo](https://wgmdemo.pages.dev) is built by Cloudflare Pages straight from this repository: root directory `web`, build command `npm run build:demo`, output `dist-demo`, Node 26 (`NODE_VERSION`). Every push to `master` rebuilds it.
 
@@ -97,6 +98,10 @@ Run them under different umasks (002, 022, 077) when touching file modes.
 - `test_helper.py` tests `wgmanager-helper`: the request parser against hostile input, the backend steps, and reading state from files in PiVPN's real layout. `fakes/pivpn` and `fakes/wg` are test doubles. `fakes/pivpn` reproduces real PiVPN quirks on purpose (exit 0 on "does not exist", reload failures that still exit 0), so the helper's checks after each change are exercised. The fake `wg` dump contains secret sentinel strings, and the tests assert they never appear in output or logs.
 - `test_host.py` tests `wgmanager-host doctor` against a throwaway folder tree. Every external command (`sshd`, `sudo`, `visudo`, `id`, `getent`) is answered from a table, so each way a real server can be misconfigured is reproducible. It also asserts that `doctor` changes nothing.
 - `test_install.py` tests `install` and `uninstall` against a stateful fake system (accounts, files, sshd, sudo). It checks what ends up on disk, that sshd is changed last, that a failure at any step restores the previous state, and that running twice changes nothing.
+
+### Web UI tests
+
+In `web/`, `npm test` runs the unit tests in `test/` with Node's built-in test runner. No browser is needed.
 
 ### Backend tests
 
