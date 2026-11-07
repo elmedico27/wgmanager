@@ -35,6 +35,7 @@ export const app = $state({
   pending: {}, // name -> action in flight
   failures: [], // unacknowledged failure warnings (from the server, plus local ones)
   notes: {}, // client notes: public key -> text (the app's own data, see api.js)
+  search: '', // Clients page search text: memory only (not the address, not localStorage)
   notesUnreadable: false, // notes.json is damaged on the server; saving is refused
   noteDirty: false, // the open panel has an unsaved note
   discard: null, // pending "discard unsaved note?" question: the step to take if the answer is yes
@@ -77,7 +78,7 @@ function resetSessionState() {
   Object.assign(app, {
     view: 'clients', list: null, version: null, settings: null, listError: null, hostError: null,
     hostKey: null, lastRefresh: 0, selected: null, adding: false, pending: {}, failures: [],
-    notes: {}, notesUnreadable: false, noteDirty: false, discard: null,
+    notes: {}, notesUnreadable: false, noteDirty: false, discard: null, search: '',
   });
   // Signing in again returns to the page in the address bar.
   const r = currentRoute();

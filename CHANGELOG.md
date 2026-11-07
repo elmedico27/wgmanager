@@ -20,15 +20,23 @@ the helper too.
   with a note icon on the client's card and list row. Notes are kept in the
   app's data volume (`notes.json`), not on the server, and are deleted with the
   client when you delete it in WG Manager.
-
-### Fixed
-
-- The client panel's public key is shown in the same colour as the other details.
+- **Search** on the Clients page: a magnifying-glass button opens a search box
+  that filters clients by name, address or note. The filter stays on (shown by
+  a dot on the button) until you clear it, reload or sign out.
 
 ### Changed
 
 - The live demo moved to https://wgmdemo.pages.dev and is now built directly
   from this repository's `web/` folder.
+- Clients WG Manager can't manage (a name it doesn't accept, or an address
+  outside the VPN's range) now open in the panel, read-only: a warning, their
+  details and note, no QR code or config, and the buttons switched off.
+- Card view's **Sort by** row is now behind an arrows button next to Search, in
+  the same pull-out box, so the Clients page has less clutter on phones.
+
+### Fixed
+
+- The client panel's public key is shown in the same colour as the other details.
 
 ## [0.1.3] - 2026-11-04
 

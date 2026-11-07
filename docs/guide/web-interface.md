@@ -12,8 +12,9 @@ This page lists your VPN clients as cards or as a list; switch between them with
 
 - **Add a client:** click **Add client**, enter a name and confirm. The new client's QR code and config download appear straight away. Scan the QR code with the WireGuard app on a phone, or download the config file for a computer.
 - **Open a client:** click it. A panel slides in with its QR code and config (each behind a click, because they contain the client's private key), a download button, its details, and **Manage** buttons to disable, enable or delete it. Disabling and deleting ask you to confirm.
-- **Notes:** each client's panel has a **Notes** box for anything you want to remember about it, up to 500 characters. Click **Save** to keep it; closing the panel with unsaved changes asks first. Clients with a note show a small note icon next to their name; point at it to read the note (on a phone, open the client). Notes are stored by WG Manager, not on the server, and belong to that client only: deleting the client in WG Manager deletes its note, and a client re-created under the same name starts without one.
-- **Sort:** click a column heading in list view, or use **Sort by** above the cards. Click again to reverse. Your browser remembers your choice.
+- **Notes:** each client's panel has a **Notes** box for anything you want to remember about it, up to 500 characters. If it runs over (for example after pasting), nothing is cut off: the counter turns red and **Save** stays off until you shorten it. Click **Save** to keep it; closing the panel with unsaved changes asks first. Clients with a note show a small note icon next to their name; point at it to read the note (on a phone, open the client). Notes are stored by WG Manager, not on the server, and belong to that client only: deleting the client in WG Manager deletes its note, and a client re-created under the same name starts without one.
+- **Search:** click the magnifying glass next to the refresh button and type. The list shows only clients whose name, address or note contains your text (capitals don't matter). The filter stays on when you close the search box, and a dot on the magnifying glass shows it's on. It also stays while you open clients, use Back and Forward, or visit Host and Settings. Reloading the page or signing out clears it. If nothing matches, click **Clear**. A link to a client always opens it, even one the filter hides.
+- **Sort:** in card view, click the arrows button next to the magnifying glass and pick a field under **Sort by**; in list view, click a column heading. Click the same field again to reverse. Your browser remembers your choice.
 
 **Client names** can use letters, digits, `_` and `-`, up to 15 characters. A name can't be all digits, can't be `server`, and must be unique (`Alice` and `alice` count as the same name). Use one client per device, for example `Alice_Phone`.
 
@@ -28,7 +29,7 @@ This page lists your VPN clients as cards or as a list; switch between them with
 | Downloaded / Uploaded | Data transferred, counted from the device's point of view, since the WireGuard interface last started. |
 | Address | The client's address inside the VPN. |
 
-Some clients are shown greyed out with a reason and no buttons. These are clients whose name breaks the rules above, or whose address is outside the VPN's range. Manage them with `pivpn` on the server. They can still have a note, through their [page link](#page-links).
+Some clients are shown greyed out with a reason. These are clients whose name breaks the rules above, or whose address is outside the VPN's range. Manage them with `pivpn` on the server. You can still open them: the panel shows their details and their note (which you can edit), but no QR code or config, and its buttons are switched off.
 
 If the WireGuard interface is down, **Add client** and **Enable** are switched off, because a change couldn't take effect. See [The WireGuard interface is down](./troubleshooting#interface-down).
 

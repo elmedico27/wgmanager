@@ -14,7 +14,9 @@
   let client = $derived(app.list?.clients.find((c) => c.name === app.selected) ?? null);
   let name = $derived(app.selected);
   let up = $derived(app.list?.interface.up ?? true);
-  let st = $derived(client ? status(client, up) : null);
+  // Unmanageable clients read the same as on their card.
+  let st = $derived(!client ? null : client.manageable ? status(client, up) : { tone: 'warn', label: 'Managed outside wgmanager' });
+  let readOnly = $derived(client ? !client.manageable : false);
   let pending = $derived(name ? app.pending[name] : null);
   let confirming = $state(null); // 'disable' | 'remove'
   let lastError = $state(null);
@@ -133,12 +135,14 @@
         <p class="text-sm text-ink-3">Loading…</p>
       {:else if !client}
         <p class="text-sm text-ink-2">This client is not in the latest list from the host.</p>
-      {:else if !client.manageable}
-        <!-- reachable only by address (/clients/NAME); cards and rows don't open these -->
-        <p class="text-sm text-ink-2">{unmanageableReason(client, isSafeName)}</p>
-        {#key client.public_key}<NoteEditor publicKey={client.public_key} {name} />{/key}
       {:else}
-        {#if isFlagged(name)}
+        {#if readOnly}
+          <!-- Read-only (owner, 2026-11-06): details and notes, no config, disabled actions. -->
+          <div class="flex gap-2.5 rounded-lg border border-warn-line bg-warn-soft px-3 py-2.5 text-sm">
+            <Icon name="lock" size={16} class="mt-0.5 shrink-0 text-warn" />
+            <span>WG Manager can't manage this client. {unmanageableReason(client, isSafeName)}</span>
+          </div>
+        {:else if isFlagged(name)}
           <div class="rounded-lg border border-warn-line bg-warn-soft px-3 py-2.5 text-sm">
             The last change to this client may be incomplete. See the warning at the top of the page.
           </div>
@@ -161,10 +165,12 @@
           </section>
         {/if}
 
-        <section class="flex flex-col gap-3">
-          <h3 class="text-sm font-semibold">Connect a device</h3>
-          {#key name}<ConfigView {name} />{/key}
-        </section>
+        {#if !readOnly}
+          <section class="flex flex-col gap-3">
+            <h3 class="text-sm font-semibold">Connect a device</h3>
+            {#key name}<ConfigView {name} />{/key}
+          </section>
+        {/if}
 
         <section class="flex flex-col gap-3">
           <h3 class="text-sm font-semibold">Details</h3>
@@ -200,7 +206,16 @@
         <section class="flex flex-col gap-3">
           <h3 class="text-sm font-semibold">Manage</h3>
 
-          {#if app.hostError && !pending}
+          {#if readOnly}
+            <div class="flex flex-wrap gap-2">
+              {#if isEnabled}
+                <button class="btn btn-ghost" disabled><Icon name="power" size={16} /> Disable</button>
+              {:else}
+                <button class="btn btn-ghost" disabled><Icon name="power" size={16} /> Enable</button>
+              {/if}
+              <button class="btn btn-danger-ghost" disabled><Icon name="trash" size={16} /> Delete</button>
+            </div>
+          {:else if app.hostError && !pending}
             <p class="rounded-xl border border-line bg-surface px-4 py-3 text-sm text-ink-2">
               Changes are paused until WG Manager can reach and trust the server again. See the message on the
               Clients page.

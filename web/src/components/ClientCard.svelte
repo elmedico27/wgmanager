@@ -67,7 +67,12 @@
     </div>
   </button>
 {:else}
-  <div class="flex min-w-0 flex-col gap-3 rounded-xl border border-dashed border-line bg-surface-2 p-4 opacity-75">
+  <button
+    class="flex min-w-0 flex-col gap-3 rounded-xl border border-dashed bg-surface-2 p-4 text-left transition-[border-color,opacity] duration-150 hover:opacity-100
+      {selected ? 'border-accent opacity-100 ring-2 ring-accent-soft' : 'border-line opacity-75 hover:border-ink-3/50'}"
+    onclick={() => (app.selected = client.name)}
+    aria-haspopup="dialog"
+  >
     <div class="flex items-start gap-3">
       <div class="pt-[7px]"><StatusDot tone="warn" label="Managed outside wgmanager" /></div>
       <div class="min-w-0 flex-1">
@@ -80,7 +85,7 @@
       <Icon name="lock" size={16} class="mt-1 text-ink-3" />
     </div>
     <p class="text-[13px] text-ink-2">{unmanageableReason(client, isSafeName)}</p>
-  </div>
+  </button>
 {/if}
 
 {#snippet noteMark(text)}

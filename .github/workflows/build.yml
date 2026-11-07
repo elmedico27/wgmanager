@@ -45,6 +45,7 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npm run build
+          npm test
 
       - name: Backend tests, including SSH against a throwaway local sshd
         working-directory: server
