@@ -9,7 +9,7 @@
 // backend_failed + failed_checks/partial/backup, host_misconfigured, busy,
 // internal). The backend adds app-level codes: unauthenticated, bad_login,
 // unreachable (SSH refused or host down), timeout (60 s, outcome unknown),
-// protocol_mismatch, bad_code, weak_password, already_set, no_password, rate_limited,
+// protocol_mismatch, bad_code, weak_password, password_too_long, already_set, no_password, rate_limited,
 // hostkey_unconfirmed, hostkey_changed, hostkey_mismatch, key_refused (server
 // reachable but it refused the app's key), bad_response, csrf, no_route,
 // server_error (the app's own fault, not the helper's `internal`), and on the

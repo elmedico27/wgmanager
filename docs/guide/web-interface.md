@@ -49,7 +49,7 @@ Shows the state of the server side: the WireGuard interface (name, port, public 
 ![The Settings page (sample data)](/screenshot-settings-dark.png){.screenshot .only-dark}
 
 - **Appearance:** follow your device, light or dark.
-- **Admin password:** change it by entering the current one and a new one. This signs out every other browser.
+- **Admin password:** change it by entering the current one and a new one. This signs out every other browser. A password needs 12 to 128 characters. The 128 limit is counted in bytes, which is the same as characters for plain English letters, digits and symbols; accented letters, other scripts and emoji use 2 to 4 bytes each. Nothing is ever cut off: a password that is too long is refused.
 - **SSH connection:** shows the server address, port and account WG Manager uses. These can't be changed here; edit `.env` instead (see [Configuration reference](./configuration)).
 - **Server identity:** the pinned fingerprint. Use **Confirm a new server identity…** only after you have deliberately replaced the server's SSH keys.
 - **App key:** the app's public SSH key and the install command, used when you [update](./getting-started#update) the helper.
@@ -60,6 +60,18 @@ Two kinds of notice can appear above every page:
 
 - **A change failed or may be incomplete.** It stays until you click **I've checked this**. See [Recovering from a failed change](./recovery).
 - **Helper update available.** The helper on your server is older than the one this version of WG Manager comes with. Click **Show update command**, run the command on the server, then click **Check again**. The notice disappears once the helper is current.
+
+## Install as an app
+
+You can add WG Manager to a phone's home screen, or to a computer's apps, so it opens in its own window without the browser's address bar. The exact menu wording differs between browsers and versions, but it is usually:
+
+- **Android, Chrome:** the menu (three dots), then **Install app** or **Add to Home screen**.
+- **iPhone and iPad, Safari:** the Share button, then **Add to Home Screen**.
+- **Chrome or Edge on a computer:** the install icon at the right end of the address bar, or the browser menu.
+
+Browsers offer to install a site as an app only when it is served over HTTPS (or from `localhost`). Over a plain `http://` address on your own network you may only get a shortcut that opens in a normal browser tab. To get the full app, put WG Manager behind an HTTPS reverse proxy ([Configuration](./configuration) says how it is set up).
+
+Installing changes only how it looks. It still needs the server (there is no offline mode), the same sign-in rules apply, and the installed app may keep its own sign-in, so you might have to sign in again there.
 
 ## Page links
 

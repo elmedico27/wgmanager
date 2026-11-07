@@ -5,6 +5,7 @@
 
 import { run, scenarios as helperScenarios, snapshot, restore, publicKeyOf, HELPER_VERSION } from './helper.js';
 import qrcode from 'qrcode-generator';
+import { passwordCode } from '../lib/format.js';
 
 // As in the real backend: UTF-8, not the library's 8-bit truncation.
 qrcode.stringToBytes = (s) => Array.from(new TextEncoder().encode(s));
@@ -42,7 +43,6 @@ let pinned = { fingerprint: OFFERED_FP, type: 'ED25519', at: Date.now() - 864000
 
 // The real setup code is random and printed to the container log on start.
 export const PREVIEW_SETUP_CODE = 'K7QM-4XTD-92PW';
-export const MIN_PASSWORD = 12;
 
 export const scenarios = helperScenarios;
 
@@ -118,7 +118,7 @@ async function route(method, path, body) {
   if (path === '/api/setup' && method === 'POST') {
     if (!appScenarios.noPassword) return appError('already_set', 'a password is already set');
     if (body?.code?.trim().toUpperCase() !== PREVIEW_SETUP_CODE) return appError('bad_code', 'wrong setup code');
-    if (!body?.password || body.password.length < MIN_PASSWORD) return appError('weak_password', 'too short');
+    { const c = passwordCode(body?.password); if (c) return appError(c, c === 'password_too_long' ? 'too long' : 'too short'); }
     appScenarios.noPassword = false;
     authenticated = true;
     return { ok: true, data: { authenticated } };
@@ -165,7 +165,7 @@ async function route(method, path, body) {
   if (path === '/api/password' && method === 'POST') {
     // Preview: any non-empty current password is accepted.
     if (!body?.current) return appError('bad_login', 'current password is wrong');
-    if (!body?.password || body.password.length < MIN_PASSWORD) return appError('weak_password', 'too short');
+    { const c = passwordCode(body?.password); if (c) return appError(c, c === 'password_too_long' ? 'too long' : 'too short'); }
     return { ok: true, data: { changed: true, otherSessionsSignedOut: true } };
   }
   if (path === '/api/failures' && method === 'GET') return { ok: true, data: { failures } };

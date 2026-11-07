@@ -11,8 +11,12 @@
 
 import crypto from 'node:crypto';
 
+// Length rules for the admin password. The minimum counts Unicode code points
+// (what a person calls "characters"; an emoji is 1). The maximum counts UTF-8
+// bytes, which bounds the hashing work exactly and cannot be gamed with
+// multi-byte characters. For ASCII the two are the same.
 export const MIN_PASSWORD = 12;
-export const MAX_PASSWORD = 1024;
+export const MAX_PASSWORD_BYTES = 128;
 const SCRYPT = { N: 2 ** 16, r: 8, p: 2, keylen: 32 };
 const SCRYPT_MAXMEM = 256 * 1024 * 1024;
 // Crockford base32 without I, L, O, U: easy to read off a terminal.
@@ -52,9 +56,11 @@ export async function verifyPassword(password, record) {
   return key.length === expected.length && crypto.timingSafeEqual(key, expected);
 }
 
+/** 'weak_password' (too short, or not text), 'password_too_long', or null. Checked before any hashing. */
 export function passwordProblem(pw) {
-  if (typeof pw !== 'string' || pw.length < MIN_PASSWORD) return 'weak_password';
-  if (pw.length > MAX_PASSWORD) return 'weak_password';
+  if (typeof pw !== 'string') return 'weak_password';
+  if (Buffer.byteLength(pw, 'utf8') > MAX_PASSWORD_BYTES) return 'password_too_long';
+  if ([...pw].length < MIN_PASSWORD) return 'weak_password';
   return null;
 }
 
@@ -135,7 +141,7 @@ export class Admin {
 
   async check(password) {
     const rec = this.record();
-    if (!rec || rec.broken || typeof password !== 'string' || password.length > MAX_PASSWORD) return false;
+    if (!rec || rec.broken || typeof password !== 'string' || Buffer.byteLength(password, 'utf8') > MAX_PASSWORD_BYTES) return false;
     return verifyPassword(password, rec);
   }
 

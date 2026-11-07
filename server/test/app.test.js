@@ -10,7 +10,7 @@ import { MockTransport } from '../src/transport.js';
 import { createApp } from '../src/app.js';
 import { loadUi } from '../src/http.js';
 import { readHelperVersion } from '../src/bundled.js';
-import { Admin } from '../src/auth.js';
+import { Admin, passwordProblem } from '../src/auth.js';
 
 const mock = await import('../../web/src/mock/helper.js');
 
@@ -22,6 +22,7 @@ async function start({ transport, clock } = {}) {
   fs.mkdirSync(path.join(uiDir, 'assets'), { recursive: true });
   fs.writeFileSync(path.join(uiDir, 'index.html'), '<!doctype html><title>t</title>');
   fs.writeFileSync(path.join(uiDir, 'assets', 'app-abc.js'), 'console.log(1)');
+  fs.writeFileSync(path.join(uiDir, 'manifest.webmanifest'), '{"name":"t"}');
   fs.writeFileSync(path.join(dir, 'secret.txt'), 'nope');
   const cfg = loadConfig({ DATA_DIR: path.join(dir, 'data'), UI_DIR: uiDir, HELPER_MODE: 'mock' });
   const store = new Store(cfg.dataDir);
@@ -203,6 +204,14 @@ test('UI files: index, hashed assets cached, nothing outside the build', async (
   }
 });
 
+test('web app manifest: served without signing in, right type, allowed by the CSP, never cached hard', async () => {
+  const r = await client().req('GET', '/manifest.webmanifest');
+  assert.equal(r.res.status, 200);
+  assert.equal(r.res.headers.get('content-type'), 'application/manifest+json');
+  assert.equal(r.res.headers.get('cache-control'), 'no-cache');
+  assert.match(r.res.headers.get('content-security-policy'), /(^|; )manifest-src 'self'(;|$)/);
+});
+
 test('page addresses: app pages get the app, anything else the app with 404', async () => {
   for (const u of ['/', '/clients', '/clients/', '/host', '/settings/', '/clients/Alice_Phone', '/clients/Bob%20Phone']) {
     const r = await client().req('GET', u);
@@ -237,6 +246,57 @@ test('session expires after 6 hours idle and after 7 days regardless', async () 
     if ((await cl2.req('GET', '/api/session')).json.data.authenticated === false) break;
   }
   assert.equal((await cl2.req('GET', '/api/clients')).res.status, 401, 'over 7 days');
+});
+
+test('password length: 12 code points at least, 128 UTF-8 bytes at most, refused before hashing', async () => {
+  // The rule itself
+  assert.equal(passwordProblem('\u{1F600}'.repeat(6)), 'weak_password'); // 6 code points, 12 UTF-16 units
+  assert.equal(passwordProblem('\u{1F600}'.repeat(12)), null); // 12 code points, 48 bytes
+  assert.equal(passwordProblem('x'.repeat(11)), 'weak_password');
+  assert.equal(passwordProblem('x'.repeat(12)), null);
+  assert.equal(passwordProblem('x'.repeat(128)), null);
+  assert.equal(passwordProblem('x'.repeat(129)), 'password_too_long');
+  assert.equal(passwordProblem('\u00e9'.repeat(64)), null); // 128 bytes
+  assert.equal(passwordProblem('\u00e9'.repeat(65)), 'password_too_long'); // 65 characters, 130 bytes
+  assert.equal(passwordProblem(5), 'weak_password');
+  // Over HTTP
+  const cl = client();
+  const post = (password) => cl.req('POST', '/api/setup', { code: code(), password });
+  let r = await post('\u{1F600}'.repeat(6));
+  assert.equal(r.json.error.code, 'weak_password');
+  r = await post('x'.repeat(129));
+  assert.equal(r.res.status, 400);
+  assert.equal(r.json.error.code, 'password_too_long');
+  assert.match(r.json.error.message, /128 bytes/);
+  assert.equal(ctx.app.admin.isSet(), false);
+  r = await post('\u00e9'.repeat(64));
+  assert.equal(r.json.ok, true);
+  // The same password signs in; one byte more never matches and is a plain wrong password.
+  const again = client();
+  r = await again.req('POST', '/api/session', { password: '\u00e9'.repeat(64) });
+  assert.equal(r.json.ok, true);
+  assert.equal(await ctx.app.admin.check('\u00e9'.repeat(65)), false);
+});
+
+test('sign-in: an over-length password is a plain wrong password and counts as a failed attempt', async () => {
+  await signedIn();
+  const other = client();
+  for (let i = 0; i < 5; i++) {
+    const r = await other.req('POST', '/api/session', { password: 'x'.repeat(129) });
+    assert.equal(r.json.error.code, 'bad_login');
+  }
+  const r = await other.req('POST', '/api/session', { password: 'correct horse battery' });
+  assert.equal(r.res.status, 429);
+});
+
+test('password change: a new password over 128 bytes is refused; an over-length current one is just wrong', async () => {
+  const a = await signedIn();
+  let r = await a.req('POST', '/api/password', { current: 'correct horse battery', password: 'x'.repeat(129) });
+  assert.equal(r.json.error.code, 'password_too_long');
+  r = await a.req('POST', '/api/password', { current: 'x'.repeat(129), password: 'another long password' });
+  assert.equal(r.json.error.code, 'bad_login');
+  r = await a.req('POST', '/api/password', { current: 'correct horse battery', password: 'x'.repeat(128) });
+  assert.equal(r.json.ok, true);
 });
 
 test('password change keeps this session and signs out the others', async () => {

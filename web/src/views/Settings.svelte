@@ -4,14 +4,14 @@
   import PasswordFields from '../components/PasswordFields.svelte';
   import { app, savePrefs, logout, notify, connect } from '../lib/store.svelte.js';
   import { api, DEMO } from '../lib/api.js';
-  import { MIN_PASSWORD, REPO_URL, DOCKER_HUB_URL } from '../lib/format.js';
+  import { passwordCode, PASSWORD_TOO_SHORT, PASSWORD_TOO_LONG, REPO_URL, DOCKER_HUB_URL } from '../lib/format.js';
 
   let current = $state('');
   let password = $state('');
   let confirm = $state('');
   let saving = $state(false);
   let pwError = $state(null);
-  let canSave = $derived(current && password.length >= MIN_PASSWORD && password === confirm && !saving);
+  let canSave = $derived(current && passwordCode(password) === null && password === confirm && !saving);
 
   async function changePassword(e) {
     e.preventDefault();
@@ -26,7 +26,8 @@
     } else {
       pwError = {
         bad_login: 'The current password is not right.',
-        weak_password: `Use at least ${MIN_PASSWORD} characters.`,
+        weak_password: PASSWORD_TOO_SHORT,
+        password_too_long: PASSWORD_TOO_LONG,
         rate_limited: 'Too many failed attempts. Wait 15 minutes and try again.',
         network: 'The WG Manager server did not answer.',
       }[r.error.code] ?? 'Could not change the password.';

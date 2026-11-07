@@ -95,7 +95,7 @@ WG Manager is a **Docker web app** and a **small helper** on the server that run
    ```
 
 4. **Choose your admin password.** 
-   - In a browser, open `http://<server-address>:7501`, enter the setup code, and choose a password of at least 12 characters.
+   - In a browser, open `http://<server-address>:7501`, enter the setup code, and choose a password of 12 to 128 characters.
 
 5. **Install the helper.** 
    - The next screen shows an install command with this app's key filled in. Click **Copy**, run it on the server, and type `y` at `Proceed? [y/N]`. Its last line is the server's fingerprint.

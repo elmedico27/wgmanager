@@ -149,12 +149,27 @@ export function errorText(err) {
 
 // --- admin password ----------------------------------------------------------------
 
+// Same rules as the server (server/src/auth.js): at least 12 Unicode code points
+// (an emoji counts 1), at most 128 UTF-8 bytes. For ASCII the two are the same.
 export const MIN_PASSWORD = 12;
+export const MAX_PASSWORD_BYTES = 128;
+export const PASSWORD_TOO_SHORT = `Use at least ${MIN_PASSWORD} characters.`;
+export const PASSWORD_TOO_LONG = `Too long: the limit is ${MAX_PASSWORD_BYTES} bytes. Accented letters, other scripts and emoji use 2 to 4 bytes each.`;
+
+/** The API's error code for a new password, or null if its length is fine. */
+export function passwordCode(pw) {
+  if (typeof pw !== 'string') return 'weak_password';
+  if (new TextEncoder().encode(pw).length > MAX_PASSWORD_BYTES) return 'password_too_long';
+  if ([...pw].length < MIN_PASSWORD) return 'weak_password';
+  return null;
+}
 
 /** Problem with a new password pair, or null. Length only: no composition rules. */
 export function passwordProblem(pw, confirm) {
   if (!pw) return null;
-  if (pw.length < MIN_PASSWORD) return `Use at least ${MIN_PASSWORD} characters.`;
+  const code = passwordCode(pw);
+  if (code === 'password_too_long') return PASSWORD_TOO_LONG;
+  if (code) return PASSWORD_TOO_SHORT;
   if (confirm && pw !== confirm) return 'The two passwords do not match.';
   return null;
 }

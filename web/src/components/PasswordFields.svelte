@@ -1,19 +1,21 @@
 <script>
   // New password + confirmation, checked as you type. Length is the only rule.
-  import { passwordProblem, MIN_PASSWORD } from '../lib/format.js';
+  import { passwordCode, MIN_PASSWORD, MAX_PASSWORD_BYTES, PASSWORD_TOO_LONG } from '../lib/format.js';
 
   let { password = $bindable(''), confirm = $bindable(''), idPrefix, disabled = false } = $props();
-  let problem = $derived(passwordProblem(password, confirm));
-  let lengthOk = $derived(password.length >= MIN_PASSWORD);
+  let code = $derived(password ? passwordCode(password) : null);
+  let lengthOk = $derived(!!password && code === null);
   let matchShown = $derived(confirm.length > 0);
 </script>
 
 <div class="flex flex-col gap-1.5">
   <label for="{idPrefix}-new" class="text-sm font-medium">New password</label>
   <input id="{idPrefix}-new" type="password" class="field" bind:value={password} autocomplete="new-password" {disabled} />
-  <span class="text-xs {password && !lengthOk ? 'text-off' : 'text-ink-3'}">
-    At least {MIN_PASSWORD} characters.
-  </span>
+  {#if code === 'password_too_long'}
+    <span class="text-xs text-off">{PASSWORD_TOO_LONG}</span>
+  {:else}
+    <span class="text-xs {password && !lengthOk ? 'text-off' : 'text-ink-3'}">{MIN_PASSWORD} to {MAX_PASSWORD_BYTES} characters.</span>
+  {/if}
 </div>
 <div class="flex flex-col gap-1.5">
   <label for="{idPrefix}-confirm" class="text-sm font-medium">Confirm password</label>

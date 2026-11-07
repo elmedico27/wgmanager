@@ -3,7 +3,7 @@
   // container log, so only someone who can read the log can claim the app.
   import PasswordFields from '../components/PasswordFields.svelte';
   import { setup } from '../lib/store.svelte.js';
-  import { MIN_PASSWORD } from '../lib/format.js';
+  import { passwordCode, PASSWORD_TOO_SHORT, PASSWORD_TOO_LONG } from '../lib/format.js';
   import { MOCK } from '../lib/api.js';
 
   let code = $state('');
@@ -12,11 +12,12 @@
   let busy = $state(false);
   let error = $state(null);
 
-  let ready = $derived(code.trim() && password.length >= MIN_PASSWORD && password === confirm);
+  let ready = $derived(code.trim() && passwordCode(password) === null && password === confirm);
 
   const messages = {
     bad_code: 'That setup code is not right. Copy it again from the container log; a new one is printed each time the container starts.',
-    weak_password: `Use at least ${MIN_PASSWORD} characters.`,
+    weak_password: PASSWORD_TOO_SHORT,
+    password_too_long: PASSWORD_TOO_LONG,
     already_set: 'A password is already set. Sign in instead.',
     rate_limited: 'Too many failed attempts. Wait 15 minutes and try again.',
     network: 'The WG Manager server did not answer. Check that the container is running.',

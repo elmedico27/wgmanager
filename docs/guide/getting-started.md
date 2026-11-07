@@ -91,7 +91,7 @@ If you miss it, run `docker logs wgmanager` again. A container manager's log vie
 In a browser, open `http://<server-address>:7501`. If you changed `WEB_PORT`, use that port instead of `7501`.
 
 1. Enter the **Setup code**. Capital letters and dashes don't matter.
-2. Enter a **New password** of at least 12 characters, then repeat it under **Confirm password**.
+2. Enter a **New password** of 12 to 128 characters, then repeat it under **Confirm password**.
 3. Click **Save password and continue**.
 
 From now on you sign in with this password only. There is no username.

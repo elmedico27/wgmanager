@@ -4,7 +4,7 @@
 
 import qrcode from 'qrcode-generator';
 import crypto from 'node:crypto';
-import { Admin, Sessions, FailureLimiter, csrfMatches, passwordProblem } from './auth.js';
+import { Admin, Sessions, FailureLimiter, csrfMatches, passwordProblem, MAX_PASSWORD_BYTES } from './auth.js';
 import { securityHeaders, noStore, sendJson, parseCookies, readJson, serveUi, serveIndex } from './http.js';
 import { Notes, cleanNote, isPublicKey } from './notes.js';
 
@@ -28,10 +28,12 @@ const STATUS = {
   unreachable: 502, key_refused: 502, timeout: 504, protocol_mismatch: 502,
   hostkey_unconfirmed: 409, hostkey_changed: 502, hostkey_mismatch: 409,
   unauthenticated: 401, bad_login: 401, bad_code: 401, no_password: 409, csrf: 403, rate_limited: 429,
-  weak_password: 400, already_set: 409, no_route: 404, server_error: 500,
+  weak_password: 400, password_too_long: 400, already_set: 409, no_route: 404, server_error: 500,
 };
 
 const err = (code, message) => ({ ok: false, error: { code, message } });
+const passwordError = (code) =>
+  err(code, code === 'password_too_long' ? `password is longer than ${MAX_PASSWORD_BYTES} bytes` : 'password too short');
 
 export function createApp({ cfg, store, transport, ui = new Map(), log = console.log, now = () => Date.now(), bundledHelper = null }) {
   const admin = new Admin(store, log);
@@ -196,7 +198,8 @@ export function createApp({ cfg, store, transport, ui = new Map(), log = console
         log(`wgmanager: setup code rejected from ${ip}`);
         return reply(res, err('bad_code', 'wrong setup code'));
       }
-      if (passwordProblem(body.password)) return reply(res, err('weak_password', 'password too short'));
+      const pwProblem = passwordProblem(body.password);
+      if (pwProblem) return reply(res, passwordError(pwProblem));
       settingUp = true; // a second request arriving while this one hashes gets already_set
       try {
         await admin.setPassword(body.password);
@@ -243,7 +246,8 @@ export function createApp({ cfg, store, transport, ui = new Map(), log = console
         limiter.fail(ip);
         return reply(res, err('bad_login', 'current password is wrong'));
       }
-      if (passwordProblem(body.password)) return reply(res, err('weak_password', 'password too short'));
+      const pwProblem = passwordProblem(body.password);
+      if (pwProblem) return reply(res, passwordError(pwProblem));
       const rec = await admin.setPassword(body.password);
       sessions.keepOnly(session.id, rec.generation);
       log('wgmanager: admin password changed; other sessions signed out');
