@@ -11,6 +11,10 @@ the helper too.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-06
+
+Ships helper 0.1.4.
+
 ### Changed
 
 - A new note can only be saved for a client in the current list. Notes already
@@ -35,7 +39,7 @@ the helper too.
 - A failed notes request now shows a message instead of failing silently.
 - Screen readers announce a client's note icon as "Has a note", and the rest of
   the panel is switched off while the "Discard unsaved note?" question is open.
-- Package versions now match the release (0.2.0).
+- The version numbers in `web/`, `server/` and `docs/` now match the release.
 
 ## [0.2.0] - 2026-11-06
 
@@ -213,7 +217,8 @@ Verified from source, not run:
   one line per entry, and sshd matches each entry on its own with `*` and `?`
   wildcards only (OpenSSH 10.0p2).
 
-[Unreleased]: https://github.com/elmedico27/wgmanager/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/elmedico27/wgmanager/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/elmedico27/wgmanager/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/elmedico27/wgmanager/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/elmedico27/wgmanager/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/elmedico27/wgmanager/compare/v0.1.1...v0.1.2
