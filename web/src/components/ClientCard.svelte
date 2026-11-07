@@ -89,5 +89,5 @@
 {/if}
 
 {#snippet noteMark(text)}
-  <span class="shrink-0 text-ink-3" title={text} role="img" aria-label="Note: {text}"><Icon name="note" size={14} /></span>
+  <span class="shrink-0 text-ink-3" title={text} role="img" aria-label="Has a note"><Icon name="note" size={14} /></span>
 {/snippet}

@@ -117,7 +117,7 @@
         class="btn btn-ghost relative px-2.5 {tray === 'search' ? 'border-ink-3! bg-sunken!' : ''}"
         onclick={() => toggleTray('search')}
         aria-expanded={tray === 'search'}
-        aria-controls="clients-tray"
+        aria-controls={tray === 'search' ? 'clients-tray' : undefined}
         aria-label={filtering ? 'Search (filter on)' : 'Search'}
         title={filtering ? 'Search: a filter is on' : 'Search'}
       >
@@ -130,7 +130,7 @@
         class="btn btn-ghost px-2.5 {tray === 'sort' ? 'border-ink-3! bg-sunken!' : ''}"
         onclick={() => toggleTray('sort')}
         aria-expanded={tray === 'sort'}
-        aria-controls="clients-tray"
+        aria-controls={tray === 'sort' ? 'clients-tray' : undefined}
         aria-label="Sort"
         title="Sort"
       >
@@ -299,7 +299,7 @@
                 {#if !c.manageable}<Icon name="lock" size={14} />{/if}
                 {#if app.notes[c.public_key]}
                   {@const text = app.notes[c.public_key]}
-                  <span class="shrink-0 text-ink-3" title={text} role="img" aria-label="Note: {text}"><Icon name="note" size={14} /></span>
+                  <span class="shrink-0 text-ink-3" title={text} role="img" aria-label="Has a note"><Icon name="note" size={14} /></span>
                 {/if}
                 {#if isFlagged(c.name)}<span class="rounded-full bg-warn-soft px-1.5 text-xs text-warn">Check</span>{/if}
                 {#if app.pending[c.name]}<span class="size-3 animate-spin rounded-full border-2 border-accent border-t-transparent"></span>{/if}

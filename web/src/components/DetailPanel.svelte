@@ -16,6 +16,8 @@
   let up = $derived(app.list?.interface.up ?? true);
   // Unmanageable clients read the same as on their card.
   let st = $derived(!client ? null : client.manageable ? status(client, up) : { tone: 'warn', label: 'Managed outside wgmanager' });
+  // Only changes when the key does, so the editor below is not re-run by every keystroke.
+  let draftKey = $derived(app.noteDraft?.key ?? null);
   let readOnly = $derived(client ? !client.manageable : false);
   let pending = $derived(name ? app.pending[name] : null);
   let confirming = $state(null); // 'disable' | 'remove'
@@ -63,6 +65,7 @@
     const step = app.discard;
     app.discard = null;
     app.noteDirty = false;
+    app.noteDraft = null;
     step?.();
   }
 
@@ -121,7 +124,7 @@
     aria-modal="true"
     aria-label="Client {name}"
   >
-    <header class="flex items-start gap-3 border-b border-line px-5 pt-5 pb-4">
+    <header class="flex items-start gap-3 border-b border-line px-5 pt-5 pb-4" inert={!!app.discard}>
       {#if st}<div class="pt-2"><StatusDot tone={st.tone} label={st.label} /></div>{/if}
       <div class="min-w-0 flex-1">
         <h2 class="truncate text-lg font-semibold">{name}</h2>
@@ -130,11 +133,13 @@
       <button bind:this={closeButton} class="grid size-9 place-items-center rounded-lg text-ink-2 hover:bg-sunken" onclick={close} aria-label="Close"><Icon name="x" /></button>
     </header>
 
-    <div class="flex flex-1 flex-col gap-6 overflow-y-auto px-5 py-5">
+    <div class="flex flex-1 flex-col gap-6 overflow-y-auto px-5 py-5" inert={!!app.discard}>
       {#if !app.list}
         <p class="text-sm text-ink-3">Loading…</p>
       {:else if !client}
         <p class="text-sm text-ink-2">This client is not in the latest list from the host.</p>
+        <!-- Keep an unsaved note on screen (and askable) instead of dropping it. -->
+        {#if draftKey}{#key draftKey}<NoteEditor publicKey={draftKey} {name} />{/key}{/if}
       {:else}
         {#if readOnly}
           <!-- Read-only (owner, 2026-11-06): details and notes, no config, disabled actions. -->

@@ -479,10 +479,12 @@ test('behind a trusted proxy, Origin may match X-Forwarded-Host', async () => {
 
 // --- client notes -------------------------------------------------------------------
 
-const KEY_A = 'A'.repeat(42) + 'E=';
+// A new note needs a client in the list, so these tests use a listed client's key.
+const keyOf = async (cl) => (await cl.req('GET', '/api/clients')).json.data.clients.find((c) => c.manageable).public_key;
 
 test('notes: save, read back, clean up text, empty removes', async () => {
   const cl = await signedIn();
+  const KEY_A = await keyOf(cl);
   let r = await cl.req('GET', '/api/notes');
   assert.deepEqual(r.json.data, { notes: {}, unreadable: false });
   r = await cl.req('POST', '/api/notes', { public_key: KEY_A, note: '  Work laptop\r\nsecond line\t ' });
@@ -501,12 +503,13 @@ test('notes: save, read back, clean up text, empty removes', async () => {
 
 test('notes: limits and bad input refused', async () => {
   const cl = await signedIn();
+  const KEY_A = await keyOf(cl);
   let r = await cl.req('POST', '/api/notes', { public_key: KEY_A, note: 'x'.repeat(500) });
   assert.equal(r.json.ok, true);
   r = await cl.req('POST', '/api/notes', { public_key: KEY_A, note: 'x'.repeat(501) });
   assert.equal(r.res.status, 400);
   assert.match(r.json.error.message, /500/);
-  for (const bad of [{ public_key: 'short=', note: 'x' }, { public_key: '__proto__', note: 'x' }, { public_key: KEY_A, note: 5 }, { public_key: KEY_A, note: 'bell\u0007' }]) {
+  for (const bad of [{ public_key: 'short=', note: 'x' }, { public_key: '__proto__', note: 'x' }, { public_key: KEY_A, note: 5 }, { public_key: KEY_A, note: 'bell\u0007' }, { public_key: KEY_A, note: 'c1\u0085x' }, { public_key: KEY_A, note: 'line\u2028sep' }, { public_key: KEY_A, note: 'rlo\u202eevil' }]) {
     r = await cl.req('POST', '/api/notes', bad);
     assert.equal(r.json.error.code, 'invalid_request', JSON.stringify(bad));
   }
@@ -519,6 +522,7 @@ test('notes: limits and bad input refused', async () => {
 
 test('notes: a damaged notes.json is left alone and blocks saving', async () => {
   const cl = await signedIn();
+  const KEY_A = await keyOf(cl);
   fs.writeFileSync(path.join(ctx.cfg.dataDir, 'notes.json'), '{not json');
   let r = await cl.req('GET', '/api/notes');
   assert.deepEqual(r.json.data, { notes: {}, unreadable: true });
@@ -535,8 +539,11 @@ test('notes: deleting a client in the app removes its note; others stay', async 
   const [a, b] = list;
   await cl.req('POST', '/api/notes', { public_key: a.public_key, note: 'goes' });
   await cl.req('POST', '/api/notes', { public_key: b.public_key, note: 'stays' });
+  // A note left behind by a client removed outside the app (written straight to the file).
   const orphan = 'B'.repeat(42) + 'A=';
-  await cl.req('POST', '/api/notes', { public_key: orphan, note: 'removed outside the app' });
+  const cur = JSON.parse(fs.readFileSync(path.join(ctx.cfg.dataDir, 'notes.json'), 'utf8'));
+  cur.notes[orphan] = 'removed outside the app';
+  fs.writeFileSync(path.join(ctx.cfg.dataDir, 'notes.json'), JSON.stringify(cur));
   const r = await cl.req('DELETE', `/api/clients/${a.name}`);
   assert.equal(r.json.ok, true);
   const n = (await cl.req('GET', '/api/notes')).json.data.notes;
@@ -552,4 +559,33 @@ test('notes: a failed delete keeps the note', async () => {
   assert.equal(r.json.ok, false);
   const n = (await cl.req('GET', '/api/notes')).json.data.notes;
   assert.equal(n[a.public_key], 'keep me');
+});
+
+test('notes: emoji with joiners are fine; a note for an unlisted client is refused', async () => {
+  const cl = await signedIn();
+  const key = await keyOf(cl);
+  let r = await cl.req('POST', '/api/notes', { public_key: key, note: 'family \u{1F468}\u200d\u{1F469}\u200d\u{1F467}' });
+  assert.equal(r.json.ok, true);
+  const stranger = 'C'.repeat(42) + 'A=';
+  r = await cl.req('POST', '/api/notes', { public_key: stranger, note: 'nobody' });
+  assert.equal(r.json.error.code, 'invalid_request');
+  assert.match(r.json.error.message, /not in the latest list/);
+  assert.equal(r.res.status, 400);
+  // An existing note for a client that is gone can still be edited and removed.
+  fs.writeFileSync(path.join(ctx.cfg.dataDir, 'notes.json'), JSON.stringify({ notes: { [stranger]: 'old' } }));
+  r = await cl.req('POST', '/api/notes', { public_key: stranger, note: 'older' });
+  assert.equal(r.json.ok, true);
+  r = await cl.req('POST', '/api/notes', { public_key: stranger, note: '' });
+  assert.equal(r.json.ok, true);
+  assert.deepEqual((await cl.req('GET', '/api/notes')).json.data.notes, {});
+});
+
+test('notes: deleting a client while notes.json is damaged is logged', async () => {
+  const cl = await signedIn();
+  const [a] = (await cl.req('GET', '/api/clients')).json.data.clients.filter((c) => c.manageable);
+  await cl.req('POST', '/api/notes', { public_key: a.public_key, note: 'orphan soon' });
+  fs.writeFileSync(path.join(ctx.cfg.dataDir, 'notes.json'), '{not json');
+  const r = await cl.req('DELETE', `/api/clients/${a.name}`);
+  assert.equal(r.json.ok, true);
+  assert.match(ctx.logs.join('\n'), /could not remove the note of deleted client .*unreadable/);
 });

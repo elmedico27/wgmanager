@@ -134,13 +134,26 @@ export function createApp({ cfg, store, transport, ui = new Map(), log = console
     return body;
   }
 
+  /** Is this public key a listed client's? Asks the host again when the last
+   *  list does not have it. If the host can't answer, say yes: notes don't need
+   *  the host, and the 1000-note cap bounds the harm. */
+  async function isListedKey(key) {
+    if ([...keysByName.values()].includes(key)) return true;
+    const body = await helper('list');
+    if (!body.ok || !Array.isArray(body.data?.clients)) return true;
+    keysByName = new Map(body.data.clients.map((c) => [c.name, c.public_key]));
+    return [...keysByName.values()].includes(key);
+  }
+
   async function mutate(res, action, name) {
     const key = action === 'remove' ? keysByName.get(name) : undefined;
     const body = await helper(name ? `${action} ${name}` : action, { mutation: true });
     const result = body.ok ? 'ok' : `error:${body.error?.code}`;
     if (body.ok && key) {
       try {
-        notes.set(key, '');
+        // set() reports a damaged notes file by returning a code, not by throwing.
+        const problem = notes.set(key, '');
+        if (problem) log(`wgmanager: could not remove the note of deleted client ${name}: notes file ${problem}`);
       } catch (e) {
         log(`wgmanager: could not remove the note of deleted client ${name}: ${e.message}`);
       }
@@ -281,6 +294,12 @@ export function createApp({ cfg, store, transport, ui = new Map(), log = console
       if (!isPublicKey(body.public_key)) return reply(res, err('invalid_request', 'invalid public key'));
       const c = cleanNote(body.note);
       if (c.problem) return reply(res, err('invalid_request', c.problem));
+      // A new note needs a client in the list; editing or removing an existing
+      // note (including one left behind by a client removed outside the app) does not.
+      const cur = notes.read();
+      if (!cur.unreadable && c.text && !Object.hasOwn(cur.notes, body.public_key) && !(await isListedKey(body.public_key))) {
+        return reply(res, err('invalid_request', 'that client is not in the latest list'));
+      }
       const problem = notes.set(body.public_key, c.text);
       if (problem === 'unreadable') return reply(res, err('server_error', 'notes.json is unreadable; see the log'));
       if (problem === 'full') return reply(res, err('invalid_request', 'too many notes'));

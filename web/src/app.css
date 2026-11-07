@@ -224,6 +224,15 @@ h3 {
   background: var(--surface);
   color: var(--ink);
 }
+/* A textarea grows by dragging its corner (vertical only, never below the
+   starting height). Do not put an important height on it: that beats the
+   inline height the drag sets, and the handle stops working. */
+textarea.field {
+  height: auto;
+  min-height: 5.5rem;
+  padding-block: 0.5rem;
+  resize: vertical;
+}
 .field:focus {
   outline: none;
   border-color: var(--accent);

@@ -15,6 +15,7 @@
   import Settings from './views/Settings.svelte';
   import NotFound from './views/NotFound.svelte';
   import { routeFromPath, pathFor, USE_ADDRESS } from './lib/routes.js';
+  import { pushRoute, moved } from './lib/nav.js';
 
   $effect(() => {
     const root = document.documentElement;
@@ -31,22 +32,34 @@
     const selected = view === 'clients' ? app.selected : null;
     const here = routeFromPath(location.pathname);
     if (here && here.view === view && here.selected === selected) return;
-    history.pushState(null, '', pathFor(view, selected));
+    pushRoute(pathFor(view, selected));
   });
 
-  // Back and Forward.
+  // Back and Forward. With an unsaved note open, the browser has already moved
+  // when we hear about it: go back to where it was (keeping the Forward entries),
+  // then ask. Discarding navigates as a new entry.
+  let undoing = false;
   $effect(() => {
     if (!USE_ADDRESS) return;
-    const onpop = () => {
+    const onpop = (e) => {
+      const d = moved(e.state);
+      if (undoing) {
+        undoing = false;
+        return;
+      }
       const r = routeFromPath(location.pathname);
       if (!r || app.notFound) {
         location.reload(); // into or out of the 404 page: start clean
         return;
       }
-      if (app.noteDirty && (r.view !== app.view || r.selected !== app.selected)) {
-        // The browser has already moved; put the panel's address back and ask
-        // first. Discarding then navigates as a new entry, not a step back.
-        history.pushState(null, '', pathFor(app.view, app.selected));
+      if (r.view === app.view && r.selected === app.selected) return;
+      if (app.noteDirty) {
+        if (d !== 0) {
+          undoing = true;
+          history.go(-d);
+        } else {
+          pushRoute(pathFor(app.view, app.selected)); // no position known: restore the address as a new entry
+        }
       }
       leavePanel(() => {
         app.view = r.view;

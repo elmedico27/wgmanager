@@ -37,6 +37,8 @@ export const app = $state({
   notes: {}, // client notes: public key -> text (the app's own data, see api.js)
   search: '', // Clients page search text: memory only (not the address, not localStorage)
   notesUnreadable: false, // notes.json is damaged on the server; saving is refused
+  notesFailed: false, // the last notes request failed: what is shown may be out of date
+  noteDraft: null, // unsaved note text {key, text}; survives the client leaving the list
   noteDirty: false, // the open panel has an unsaved note
   discard: null, // pending "discard unsaved note?" question: the step to take if the answer is yes
   notice: null, // short-lived message
@@ -78,7 +80,7 @@ function resetSessionState() {
   Object.assign(app, {
     view: 'clients', list: null, version: null, settings: null, listError: null, hostError: null,
     hostKey: null, lastRefresh: 0, selected: null, adding: false, pending: {}, failures: [],
-    notes: {}, notesUnreadable: false, noteDirty: false, discard: null, search: '',
+    notes: {}, notesUnreadable: false, notesFailed: false, noteDraft: null, noteDirty: false, discard: null, search: '',
   });
   // Signing in again returns to the page in the address bar.
   const r = currentRoute();
@@ -176,17 +178,27 @@ async function loadFailures(background) {
   }
 }
 
+// Bumped around every save. A notes answer that was asked for before a save
+// finished may hold the old text; it is dropped instead of undoing the save.
+let notesGen = 0;
+
 async function loadNotes(background) {
   const mine = epoch;
+  const gen = notesGen;
   const n = await api.notes({ background });
-  if (n.ok && mine === epoch) {
+  if (mine !== epoch || gen !== notesGen) return;
+  if (n.ok) {
     app.notes = n.data.notes;
     app.notesUnreadable = n.data.unreadable === true;
+    app.notesFailed = false;
+  } else {
+    app.notesFailed = true;
   }
 }
 
 /** Save one client's note ('' removes it). */
 export async function saveNote(publicKey, text) {
+  notesGen++;
   const r = await api.saveNote(publicKey, text);
   if (r.ok) {
     const next = { ...app.notes };
@@ -194,6 +206,7 @@ export async function saveNote(publicKey, text) {
     else delete next[publicKey];
     app.notes = next;
   }
+  notesGen++;
   return r;
 }
 

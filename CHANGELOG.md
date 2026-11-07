@@ -11,6 +11,32 @@ the helper too.
 
 ## [Unreleased]
 
+### Changed
+
+- A new note can only be saved for a client in the current list. Notes already
+  saved for clients removed outside WG Manager can still be edited or cleared.
+- Notes no longer accept the Unicode line and paragraph separators, C1 control
+  characters or bidirectional override characters (emoji are unaffected).
+- The notes box can be resized vertically (it was showing a resize handle that
+  did nothing).
+
+### Fixed
+
+- A notes refresh that was already in flight could briefly put an older note
+  back on screen right after saving.
+- An unsaved note is no longer lost when its client leaves the list while you
+  are typing.
+- The note counter counts the trimmed text, as the server does, so trailing
+  spaces no longer make a 500-character note look too long.
+- Back and Forward with an unsaved note open now keep the Forward history when
+  you choose to keep editing.
+- Deleting a client while the notes file is damaged now logs that its note
+  could not be removed.
+- A failed notes request now shows a message instead of failing silently.
+- Screen readers announce a client's note icon as "Has a note", and the rest of
+  the panel is switched off while the "Discard unsaved note?" question is open.
+- Package versions now match the release (0.2.0).
+
 ## [0.2.0] - 2026-11-06
 
 Ships helper 0.1.4.

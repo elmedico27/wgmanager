@@ -7,14 +7,17 @@
 // Notes for clients removed outside the app (pivpn -r) are kept on purpose:
 // deleting data because one `list` didn't show a key would risk real notes.
 
-export const NOTE_MAX = 500; // UTF-16 code units, the same count as the textarea's maxlength
+export const NOTE_MAX = 500; // UTF-16 code units of the trimmed text; the UI counts it the same way
 export const NOTES_MAX = 1000; // bounds the file; far more than a PiVPN subnet holds
 const FILE = 'notes.json';
 
 // A WireGuard key is 32 bytes in base64: 43 characters and one '='.
 const KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
-// Line breaks and tabs are fine; other control characters are refused.
-const CONTROL_RE = /[\u0000-\u0008\u000b-\u001f\u007f]/;
+// Line breaks and tabs are fine. Refused: other control characters (C0 and C1),
+// the Unicode line and paragraph separators, and the bidirectional embedding,
+// override and isolate controls (they can make a note read differently from
+// what it says). Zero-width joiners stay: emoji need them.
+const CONTROL_RE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u2028\u2029\u202a-\u202e\u2066-\u2069]/;
 
 export function isPublicKey(k) {
   return typeof k === 'string' && KEY_RE.test(k);
