@@ -1001,7 +1001,9 @@ def preflight_install(ctx, h, args):
     except h.HelperError:
         raise InstallError("%s is not a valid settings file; run doctor for details"
                            % os.path.join(CONFIG_DIR, "config"))
-    problems = h.preflight_problems(settings)
+    # Also where the helper will write (lock file, backups): otherwise the install
+    # succeeds and then every change is refused.
+    problems = h.preflight_problems(settings) + h.mutation_path_problems(settings)
     if problems:
         raise InstallError("the PiVPN/WireGuard side of this host has problems (%s); "
                            "run 'doctor' to see each one with its fix, then try again"
