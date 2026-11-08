@@ -79,6 +79,8 @@ sudo systemctl start wg-quick@wg0
 
 Before every change, the helper backs up the server's config. If a change fails or only partly happens, WG Manager shows a warning on every page until you acknowledge it. It does not undo changes automatically. [Recovering from a failed change](./recovery) explains how to check what happened and restore from the backup.
 
+If every add, remove, enable and disable is refused with "host is misconfigured" while the client list still loads, nothing was changed: the helper refused before touching anything. Usually the lock file or backup folder has been moved (with `LOCK_FILE` or `BACKUP_DIR` in `/etc/wgmanager/config`) into a folder that others can write to. [Run the doctor](#doctor); it names the path and the fix.
+
 ## I forgot the admin password {#forgot-password}
 
 Run this on the server:

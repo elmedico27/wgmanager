@@ -461,11 +461,13 @@ Fail with exit 6 `host_misconfigured` (fixed message; detail to the journal) unl
   scripts source shared ones from there (`/opt/pivpn/ipaddr_utils.sh`). Only
   what is present is judged.
 
-Note: PiVPN creates its files mode 644 and `configs/` 755, so private keys are
-readable by any local user. That is a host
-problem independent of wgmanager. Run as root, the helper sets `umask 077` before
-calling PiVPN so anything it creates is private. It does not change PiVPN's
-existing files.
+Note: PiVPN creates its files mode 644 and `configs/` 755. What keeps the private
+keys in them from other local users is `/etc/wireguard` itself, which
+wireguard-tools creates mode 0700. If that directory has been opened up, the keys
+are readable by any local user: a host problem independent of wgmanager (the
+checks above refuse it only when it is *writable*). Run as root, the helper sets
+`umask 077` before calling PiVPN so anything it creates is private. It does not
+change PiVPN's existing files.
 
 ## 11. Implementation rules
 

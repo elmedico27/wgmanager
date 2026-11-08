@@ -28,7 +28,7 @@ browser ──HTTP──▶ WG Manager (Docker) ──SSH──▶ sshd ──�
 | `/etc/wgmanager/config` | Optional helper settings. Never created for you; see [config.example](https://github.com/elmedico27/wgmanager/blob/master/host/etc/wgmanager/config.example). |
 | `/usr/local/lib/wgmanager` | The installer tool copied out of the container. Kept for `doctor`, updates and `uninstall`. |
 
-The installer adds its own files only and never edits yours. When something that isn't its own is in the way, it stops and tells you the exact fix instead of changing it. Examples: PiVPN files that non-root users can write to, an existing `wgweb` account in a privileged group, an `sshd_config` that doesn't include `sshd_config.d`, or `AllowUsers`/`AllowGroups` rules that would lock `wgweb` out. It changes `sshd` last and undoes its own steps if one fails.
+The installer adds its own files only and never edits yours. When something that isn't its own is in the way, it stops and tells you the exact fix instead of changing it. Examples: PiVPN files or folders (including `/etc/wireguard`) that non-root users can write to, an existing `wgweb` account in a privileged group, an `sshd_config` that doesn't include `sshd_config.d`, or `AllowUsers`/`AllowGroups` rules that would lock `wgweb` out. It changes `sshd` last and undoes its own steps if one fails.
 
 ## What the app stores {#app-data}
 
