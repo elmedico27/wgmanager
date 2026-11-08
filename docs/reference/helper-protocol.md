@@ -313,7 +313,9 @@ config 8 KiB).
   (`public-key preshared-key endpoint allowed-ips latest-handshake transfer-rx transfer-tx persistent-keepalive`;
   only the public key, endpoint, handshake and transfer fields are used).
   Interface down is reported as `up: false`, not as an error.
-- **Client config:** `<WG_DIR>/configs/NAME.conf`, the copy PiVPN keeps.
+- **Client config:** `<WG_DIR>/configs/NAME.conf`, the copy PiVPN keeps. It gets
+  the same open-file check as the files in section 10 (root-owned, not group- or
+  world-writable); one that fails is reported as `client_config_file`.
 
 ## 8. Mutations
 
@@ -430,6 +432,10 @@ Fail with exit 6 `host_misconfigured` (fixed message; detail to the journal) unl
   directory that merely holds a symlink (for example `/usr/local/bin`, which is
   user-owned on some systems) is not trusted or checked: swapping the link can
   only point at something that must itself pass these checks;
+- `<WG_DIR>` and `<WG_DIR>/configs` exist, are directories, root-owned, and not
+  group- or world-writable. Whoever can write to a directory can rename, replace
+  or hard-link the files in it, which `O_NOFOLLOW` and the per-file checks
+  alone cannot stop;
 - `<WG_DIR>/configs/clients.txt`, `<WG_DIR>/<iface>.conf` and PiVPN's
   `setupVars.conf` exist, are regular files, root-owned, not group- or
   world-writable. These files are checked again on the open file descriptor

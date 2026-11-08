@@ -352,7 +352,8 @@ def problem_fix(path, kind):
         return ("is PiVPN with WireGuard installed? If it lives elsewhere, set the path "
                 "in %s (see config.example)" % os.path.join(CONFIG_DIR, "config"))
     if kind == "not_directory":
-        return "put PiVPN's scripts directory at %s" % quoted
+        return ("expected a directory at %s: check the path settings in %s"
+                % (quoted, os.path.join(CONFIG_DIR, "config")))
     return "put a regular file at %s" % quoted
 
 
@@ -405,7 +406,7 @@ def check_pivpn(ctx, rep, h):
             pass
         rep.fail(line + ")", problem_fix(path, kind))
     if not problems:
-        rep.ok("pivpn (%s) and wg (%s) found; PiVPN's data files and scripts are root-owned and not "
+        rep.ok("pivpn (%s) and wg (%s) found; PiVPN's data folders, files and scripts are root-owned and not "
                "writable by others" % (settings.pivpn_exec, settings.wg_exec))
 
     backup_dir = settings.backup_dir

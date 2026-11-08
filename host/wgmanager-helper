@@ -156,15 +156,19 @@ class Settings:
 
     @property
     def clients_txt(self):
-        return os.path.join(self.wg_dir, "configs", "clients.txt")
+        return os.path.join(self.configs_dir, "clients.txt")
 
     @property
     def server_conf(self):
         return os.path.join(self.wg_dir, self.interface + ".conf")
 
+    @property
+    def configs_dir(self):
+        return os.path.join(self.wg_dir, "configs")
+
     def client_conf(self, name):
         # `name` has already passed NAME_RE: no separators, no dots.
-        return os.path.join(self.wg_dir, "configs", name + ".conf")
+        return os.path.join(self.configs_dir, name + ".conf")
 
 
 def mode_unsafe(st):
@@ -331,6 +335,27 @@ def _file_problem(path, settings):
     return None
 
 
+def _dir_problem(path, settings):
+    """Like _file_problem, for a directory whose files the helper trusts.
+
+    O_NOFOLLOW only guards the last path component, and the per-file checks only
+    the file that was opened. Whoever can write to the directory can rename,
+    replace or hard-link entries in it, so the directory must be as trustworthy
+    as its files. Links are followed: what matters is the directory used.
+    """
+    try:
+        st = os.stat(path)
+    except OSError:
+        return "missing"
+    if not stat.S_ISDIR(st.st_mode):
+        return "not_directory"
+    if mode_unsafe(st):
+        return "writable"
+    if settings.enforce_owner and st.st_uid != 0:
+        return "not_root"
+    return None
+
+
 def _resolve_executable(path, settings):
     """Resolve symlinks once and vet the real file.
 
@@ -364,6 +389,11 @@ def preflight_problems(settings):
     problems = []
     if settings.enforce_owner and os.geteuid() != 0:
         problems.append(("helper", "", "not_running_as_root"))
+    for what, path in (("WireGuard directory", settings.wg_dir),
+                       ("client configs directory", settings.configs_dir)):
+        kind = _dir_problem(path, settings)
+        if kind:
+            problems.append((what, path, kind))
     for what, path in (("clients.txt", settings.clients_txt),
                        ("server config", settings.server_conf),
                        ("PiVPN setupVars", settings.pivpn_setupvars)):
@@ -395,16 +425,11 @@ def _scripts_problems(settings):
 
 
 def _script_dir_problems(directory, settings, required):
-    try:
-        st = os.stat(directory)
-    except OSError:
-        return [("PiVPN scripts directory", directory, "missing")] if required else []
-    if not stat.S_ISDIR(st.st_mode):
-        return [("PiVPN scripts directory", directory, "not_directory")]
-    if mode_unsafe(st):
-        return [("PiVPN scripts directory", directory, "writable")]
-    if settings.enforce_owner and st.st_uid != 0:
-        return [("PiVPN scripts directory", directory, "not_root")]
+    if not required and not os.path.exists(directory):
+        return []
+    kind = _dir_problem(directory, settings)
+    if kind:
+        return [("PiVPN scripts directory", directory, kind)]
     problems = []
     try:
         names = sorted(os.listdir(directory))
@@ -626,7 +651,7 @@ def conf_file_exists(settings, name):
 
 def read_client_conf(settings, name):
     try:
-        return read_text(settings.client_conf(name), MAX_CLIENT_CONF)
+        return read_text(settings.client_conf(name), MAX_CLIENT_CONF, settings.enforce_owner)
     except (OSError, ValueError):
         return None
 
@@ -737,7 +762,7 @@ def make_backup(settings, action, name):
         for src, suffix, cap in sources:
             # Raw bytes: a byte-exact copy, and a stray non-UTF-8 byte (which
             # `list` tolerates) must not block every change.
-            data = read_bytes(src, cap)
+            data = read_bytes(src, cap, settings.enforce_owner)
             dst = os.path.join(settings.backup_dir, base + "." + suffix)
             fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
                          | os.O_CLOEXEC, 0o600)

@@ -397,6 +397,13 @@ class GetConfigTests(HelperTestCase):
         self.env.write("wg/configs/Alpha.conf", "x" * (h.MAX_CLIENT_CONF + 1))
         self.err("get-config Alpha", "backend_failed", 5)
 
+    def test_writable_config_refused(self):
+        # Client configs get the same owner/mode check as PiVPN's other files.
+        self.env.seed("Alpha")
+        os.chmod(self.env.p("wg/configs/Alpha.conf"), 0o666)
+        e = self.err("get-config Alpha", "backend_failed", 5)
+        self.assertEqual(e["failed_checks"], ["client_config_file"])
+
     def test_fifo_config_refused_without_hanging(self):
         # Opening a FIFO for reading blocks until a writer appears; the helper
         # must refuse it instead of waiting forever.
@@ -750,6 +757,25 @@ class PreflightTests(HelperTestCase):
         self.err("list", "host_misconfigured", 6)
         problems = h.preflight_problems(self.env.settings())
         self.assertIn(("PiVPN scripts directory", self.env.p("scripts"), "not_directory"),
+                      problems)
+
+    def test_writable_wireguard_directories_refused(self):
+        # Whoever can write to these can swap or hard-link the files in them.
+        for rel in ("wg", "wg/configs"):
+            os.chmod(self.env.p(rel), 0o777)
+            self.err("list", "host_misconfigured", 6)
+            self.assertIn(("WireGuard directory" if rel == "wg" else "client configs directory",
+                           self.env.p(rel), "writable"),
+                          h.preflight_problems(self.env.settings()))
+            os.chmod(self.env.p(rel), 0o755)
+        self.ok("list")
+
+    def test_wireguard_directory_that_is_a_file_refused(self):
+        shutil.rmtree(self.env.p("wg"))
+        self.env.write("wg", "")
+        problems = h.preflight_problems(self.env.settings())
+        self.assertIn(("WireGuard directory", self.env.p("wg"), "not_directory"), problems)
+        self.assertIn(("client configs directory", self.env.p("wg/configs"), "missing"),
                       problems)
 
     def test_fifo_is_refused_without_hanging(self):

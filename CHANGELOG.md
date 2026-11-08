@@ -51,6 +51,11 @@ update it.
 
 ### Security
 
+- **Helper:** `/etc/wireguard` and its `configs/` folder (or wherever `WG_DIR`
+  points) must now be root-owned and not writable by group or others, like the
+  files in them. Client configs read by `get-config` get the same owner and
+  permission check as PiVPN's other files. PiVPN's own defaults already pass;
+  `wgmanager-host doctor` shows the fix if yours don't.
 - **Helper:** successful `get-config` requests are now logged to the journal
   (action, client name and result only), so you can see which private keys were
   read. Keys and config text are still never logged.
