@@ -51,6 +51,10 @@ update it.
 - **Helper:** if PiVPN's files can't be re-read after enabling or disabling a
   client, the warning no longer says the client's config file check failed;
   enable and disable don't check that file.
+- **Helper:** PiVPN's output is sent to `/dev/null` instead of being held in
+  memory and discarded. Anything PiVPN leaves running in the background is
+  stopped when it exits, so nothing it started can change files after the
+  helper has answered.
 - **Helper:** `version` reads PiVPN's scripts safely when it hashes them: a
   FIFO, device or file over 1 MiB is reported as `null` instead of hanging the
   helper or being read without limit.

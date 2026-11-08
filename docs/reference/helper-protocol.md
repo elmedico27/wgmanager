@@ -342,9 +342,11 @@ Common procedure for `add`, `remove`, `enable`, `disable`:
    holds the server private key, exactly like the file it copies.
 5. Run the backend with a fixed argument list, working directory `/`, empty
    stdin, a minimal environment (`PATH=/usr/sbin:/usr/bin:/sbin:/bin`,
-   `LC_ALL=C`), `umask 077`, and a 30 s timeout. The backend runs in its own
-   process group; on timeout the whole group is killed, so nothing `pivpn` started
-   can keep changing files after the helper answers and releases the lock.
+   `LC_ALL=C`), `umask 077`, and a 30 s timeout. Its stdout and stderr go to
+   `/dev/null` (they are never read or logged). The backend runs in its own
+   process group, and the whole group is killed on timeout and again once `pivpn`
+   exits, so nothing it started can keep changing files after the helper answers
+   and releases the lock.
 6. Re-read state and verify postconditions (table below). Live-interface checks
    retry for up to 3 s.
 7. Log the result and return it.

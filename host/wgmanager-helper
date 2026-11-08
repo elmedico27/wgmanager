@@ -277,23 +277,31 @@ def parse_request(request):
 
 # --- subprocess --------------------------------------------------------------
 
-def run(argv, timeout):
+def run(argv, timeout, capture=True):
     """Run a fixed argument list. No shell, no stdin, minimal environment.
 
+    With capture=False (the backend) stdout and stderr go to /dev/null: that
+    output is never read or logged, so it is not held in memory either.
+
     The child gets its own process group. `pivpn` is a shell script that starts
-    further scripts; on timeout the WHOLE group is killed, so nothing it started
-    can keep editing WireGuard's files after the helper reports back and
-    releases the lock.
+    further scripts; the WHOLE group is killed on timeout and again once the
+    command has exited, so nothing it started can keep editing WireGuard's files
+    after the helper reports back and releases the lock. (Captured pipes used to
+    make the helper wait for such leftovers; /dev/null does not.)
     """
+    output = subprocess.PIPE if capture else subprocess.DEVNULL
     proc = subprocess.Popen(
-        argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, env=SAFE_ENV, cwd="/", shell=False,
-        start_new_session=True)
+        argv, stdin=subprocess.DEVNULL, stdout=output, stderr=output,
+        env=SAFE_ENV, cwd="/", shell=False, start_new_session=True)
     try:
         out, err = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         kill_group(proc)
         raise BackendTimeout()
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)     # leftovers only; usually ESRCH
+    except OSError:
+        pass
     return subprocess.CompletedProcess(argv, proc.returncode, out, err)
 
 
@@ -881,7 +889,7 @@ def run_backend(settings, action, name, argv, check, checks):
     backup = make_backup(settings, action, name)
     exit_code, timed_out = None, False
     try:
-        proc = run(argv, BACKEND_TIMEOUT)
+        proc = run(argv, BACKEND_TIMEOUT, capture=False)
         exit_code = proc.returncode
     except BackendTimeout:
         timed_out = True

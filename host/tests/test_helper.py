@@ -536,6 +536,21 @@ class AddTests(HelperTestCase):
         self.assertFalse(os.path.exists(self.env.p("late_write")),
                          "a process started by the backend survived the timeout")
 
+    def test_nothing_the_backend_left_behind_runs_after_the_reply(self):
+        import time
+        self.env.switch("bg_child")
+        self.ok("add Bob")
+        written_at_reply = os.path.exists(self.env.p("late_write"))
+        time.sleep(1.0)          # past the moment a leftover would have written
+        self.assertEqual(os.path.exists(self.env.p("late_write")), written_at_reply,
+                         "a process started by the backend changed state after the reply")
+
+    def test_backend_output_is_not_captured(self):
+        proc = h.run(["/bin/sh", "-c", "echo out; echo err >&2"], 5, capture=False)
+        self.assertEqual((proc.returncode, proc.stdout, proc.stderr), (0, None, None))
+        proc = h.run(["/bin/sh", "-c", "echo out"], 5)
+        self.assertEqual(proc.stdout, b"out\n")
+
     def test_backend_not_runnable(self):
         os.unlink(self.env.p("bin/pivpn"))
         # Missing binary is caught by preflight before anything changes.

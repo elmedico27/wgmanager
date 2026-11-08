@@ -87,6 +87,14 @@ if ctl("hang_child"):
 if ctl("hang"):
     time.sleep(60)
 
+if ctl("bg_child"):
+    # A sub-script left running in the background after `pivpn` itself exits
+    # normally, holding its stdout/stderr, that would change state late.
+    import subprocess
+    subprocess.Popen([sys.executable, "-c",
+                      "import time; time.sleep(0.5); open(%r, 'w').close()"
+                      % os.path.join(ROOT, "late_write")])
+
 args = sys.argv[1:]
 
 if args[:2] == ["add", "-n"] and len(args) == 3:
