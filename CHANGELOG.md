@@ -72,8 +72,8 @@ update it.
   folders only root can write to, and the lock file must be a root-owned file
   others can't write. A symlinked backup folder (for example on another disk) is
   fine if its real location passes. The defaults (`/run`, `/var/backups`)
-  already pass; if you moved either with `LOCK_FILE` or `BACKUP_DIR`,
-  `wgmanager-host doctor` says what to fix. Viewing clients is never blocked by
+  already pass; if you moved either with `LOCK_FILE` or `BACKUP_DIR` in
+  `/etc/wgmanager/config`, `wgmanager-host doctor` says what to fix. Viewing clients is never blocked by
   this. `wgmanager-host install` checks the same locations and refuses to
   install until they are fixed, rather than installing a helper that would
   refuse every change.
