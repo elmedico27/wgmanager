@@ -11,6 +11,8 @@ the helper too.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-08
+
 Ships helper 0.1.5. Rerun the install command from **Settings › App key** to
 update it.
 
@@ -72,7 +74,9 @@ update it.
   fine if its real location passes. The defaults (`/run`, `/var/backups`)
   already pass; if you moved either with `LOCK_FILE` or `BACKUP_DIR`,
   `wgmanager-host doctor` says what to fix. Viewing clients is never blocked by
-  this.
+  this. `wgmanager-host install` checks the same locations and refuses to
+  install until they are fixed, rather than installing a helper that would
+  refuse every change.
 - **Helper:** successful `get-config` requests are now logged to the journal
   (action, client name and result only), so you can see which private keys were
   read. Keys and config text are still never logged.
@@ -283,7 +287,8 @@ Verified from source, not run:
   one line per entry, and sshd matches each entry on its own with `*` and `?`
   wildcards only (OpenSSH 10.0p2).
 
-[Unreleased]: https://github.com/elmedico27/wgmanager/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/elmedico27/wgmanager/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/elmedico27/wgmanager/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/elmedico27/wgmanager/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/elmedico27/wgmanager/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/elmedico27/wgmanager/compare/v0.1.2...v0.1.3
