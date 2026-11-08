@@ -397,6 +397,21 @@ class GetConfigTests(HelperTestCase):
         self.env.write("wg/configs/Alpha.conf", "x" * (h.MAX_CLIENT_CONF + 1))
         self.err("get-config Alpha", "backend_failed", 5)
 
+    def test_fifo_config_refused_without_hanging(self):
+        # Opening a FIFO for reading blocks until a writer appears; the helper
+        # must refuse it instead of waiting forever.
+        self.env.seed("Alpha")
+        os.unlink(self.env.p("wg/configs/Alpha.conf"))
+        os.mkfifo(self.env.p("wg/configs/Alpha.conf"))
+        e = self.err("get-config Alpha", "backend_failed", 5)
+        self.assertEqual(e["failed_checks"], ["client_config_file"])
+
+    def test_success_is_logged_without_the_key(self):
+        self.env.seed("Alpha")
+        self.ok("get-config Alpha")
+        self.assertIn("action=get-config client=Alpha result=ok", self.logged)
+        # assert_no_secrets_logged (a cleanup) checks no key reached the log.
+
 
 # --- mutations ---------------------------------------------------------------
 
@@ -409,6 +424,36 @@ class AddTests(HelperTestCase):
                          ("Bob_Phone", True, True))
         self.assertIn("PrivateKey = FAKEPRIVATEKEY-Bob_Phone", data["config"])
         self.assertEqual(len(self.env.backups()), 2)
+
+    def test_unreadable_config_after_add_names_the_backup(self):
+        # The change went through and was backed up first: the error must say
+        # which backup, not null.
+        self.addCleanup(setattr, h, "read_client_conf", h.read_client_conf)
+        h.read_client_conf = lambda settings, name: None
+        e = self.err("add Bob", "backend_failed", 5)
+        self.assertTrue(e["partial"])
+        self.assertEqual(e["failed_checks"], ["client_config_file"])
+        self.assertEqual(e["backend_exit_code"], 0)
+        self.assertIsNotNone(e["backup"])
+        self.assertIn(e["backup"] + ".clients.txt", self.env.backups())
+
+    def test_reports_the_verified_state_without_rereading(self):
+        # Someone runs `pivpn` by hand right after verification passed. The
+        # helper reports the state it verified rather than failing on a re-read
+        # (before 0.1.5 this was a KeyError and an `internal` error).
+        self.env.seed("Bob")
+        original = h.verify
+        self.addCleanup(setattr, h, "verify", original)
+
+        def verify_then_meddle(settings, check):
+            result = original(settings, check)
+            subprocess.run([self.env.p("bin/pivpn"), "remove", "--yes", "Bob"], check=True)
+            return result
+
+        h.verify = verify_then_meddle
+        data = self.ok("disable Bob")
+        self.assertTrue(data["changed"])
+        self.assertEqual((data["client"]["name"], data["client"]["enabled"]), ("Bob", False))
 
     def test_add_passes_no_ip_flag(self):
         self.ok("add Bob")
@@ -570,6 +615,18 @@ class BackupTests(HelperTestCase):
             self.assertEqual(stat.S_IMODE(os.stat(self.env.p("backups/" + f)).st_mode), 0o600)
         self.assertEqual(stat.S_IMODE(os.stat(self.env.p("backups")).st_mode), 0o700)
 
+    def test_non_utf8_server_config_is_copied_byte_for_byte(self):
+        # `list` tolerates a stray non-UTF-8 byte; it must not block changes.
+        self.env.seed("Alpha")
+        with open(self.env.p("wg/wg0.conf"), "ab") as handle:
+            handle.write(b"# caf\xe9 (Latin-1)\n")
+        with open(self.env.p("wg/wg0.conf"), "rb") as handle:
+            before = handle.read()
+        self.ok("disable Alpha")
+        conf = next(f for f in self.env.backups() if f.endswith(".wg0.conf"))
+        with open(self.env.p("backups/" + conf), "rb") as handle:
+            self.assertEqual(handle.read(), before)
+
     def test_pruning_keeps_newest(self):
         self.env.seed("Alpha")
         for _ in range(3):
@@ -687,6 +744,23 @@ class PreflightTests(HelperTestCase):
         shutil.rmtree(self.env.p("scripts"))
         self.err("list", "host_misconfigured", 6)
 
+    def test_scripts_path_that_is_a_file_is_reported_as_such(self):
+        shutil.rmtree(self.env.p("scripts"))
+        self.env.write("scripts", "")
+        self.err("list", "host_misconfigured", 6)
+        problems = h.preflight_problems(self.env.settings())
+        self.assertIn(("PiVPN scripts directory", self.env.p("scripts"), "not_directory"),
+                      problems)
+
+    def test_fifo_is_refused_without_hanging(self):
+        os.mkfifo(self.env.p("fifo"))
+        with self.assertRaises(ValueError):
+            h.read_text(self.env.p("fifo"), 1024)
+
+    def test_live_state_needs_a_vetted_wg(self):
+        # Without preflight there is no vetted binary, so nothing is run.
+        self.assertIsNone(h.read_live(self.env.settings()))
+
     def test_opened_file_is_checked_not_just_the_path(self):
         # read_text judges the file it actually opened, so a file swapped in after
         # preflight's lstat is still refused.
@@ -694,7 +768,7 @@ class PreflightTests(HelperTestCase):
         os.chmod(path, 0o666)
         settings = self.env.settings()
         with self.assertRaises(ValueError):
-            h.read_text(path, 1024, settings)
+            h.read_text(path, 1024, settings.enforce_owner)
         self.assertIn("[Interface]", h.read_text(path, 1024))     # unchecked read still works
 
     def test_writable_pivpn_refused(self):

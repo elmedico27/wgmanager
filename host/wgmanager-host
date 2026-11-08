@@ -333,6 +333,7 @@ def load_helper(ctx):
 PROBLEM_TEXT = {
     "missing": "is missing",
     "not_regular": "is not a regular file (a symlink or directory?)",
+    "not_directory": "is not a directory",
     "writable": "is writable by group or others",
     "not_root": "is not owned by root",
     "not_executable": "is not executable",
@@ -350,6 +351,8 @@ def problem_fix(path, kind):
     if kind == "missing":
         return ("is PiVPN with WireGuard installed? If it lives elsewhere, set the path "
                 "in %s (see config.example)" % os.path.join(CONFIG_DIR, "config"))
+    if kind == "not_directory":
+        return "put PiVPN's scripts directory at %s" % quoted
     return "put a regular file at %s" % quoted
 
 

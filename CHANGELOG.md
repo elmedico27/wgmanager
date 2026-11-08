@@ -11,6 +11,9 @@ the helper too.
 
 ## [Unreleased]
 
+Ships helper 0.1.5. Rerun the install command from **Settings › App key** to
+update it.
+
 ### Added
 
 - **Install as an app:** WG Manager now has a web app manifest and icons, so a
@@ -30,6 +33,27 @@ the helper too.
   never cut short. If your current password is longer than 128 bytes you can no
   longer sign in with it: run `docker exec wgmanager wgmanager reset-password` and
   choose a new one.
+
+### Fixed
+
+- **Helper:** a stray non-UTF-8 byte in `wg0.conf` (for example an accented
+  letter in a comment saved as Latin-1) no longer blocks every add, remove,
+  enable and disable with "host is misconfigured". Backups are now byte-for-byte
+  copies.
+- **Helper:** if a new client's config can't be read back after `add`, the
+  error now names the pre-change backup and PiVPN's exit code instead of
+  leaving them empty.
+- **Helper:** a change that passed verification is reported from the state it
+  verified. Before, running `pivpn` by hand at that moment could turn a
+  successful change into a generic "internal error".
+- **Helper:** a FIFO where a file is expected is refused instead of hanging the
+  helper.
+
+### Security
+
+- **Helper:** successful `get-config` requests are now logged to the journal
+  (action, client name and result only), so you can see which private keys were
+  read. Keys and config text are still never logged.
 
 ## [0.2.1] - 2026-11-06
 

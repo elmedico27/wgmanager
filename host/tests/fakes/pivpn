@@ -43,12 +43,13 @@ def fake_key(name):
 
 
 def read(path):
-    with open(path) as handle:
+    # surrogateescape: like the real scripts' sed, pass stray non-UTF-8 bytes through.
+    with open(path, encoding="utf-8", errors="surrogateescape") as handle:
         return handle.read()
 
 
 def write(path, text):
-    with open(path, "w") as handle:
+    with open(path, "w", encoding="utf-8", errors="surrogateescape") as handle:
         handle.write(text)
 
 
@@ -103,7 +104,7 @@ if args[:2] == ["add", "-n"] and len(args) == 3:
         address += 1
     dotted = str(ipaddress.IPv4Address(address))
     pub = fake_key(name)
-    with open(WG0, "a") as handle:
+    with open(WG0, "a", encoding="utf-8", errors="surrogateescape") as handle:
         handle.write("### begin %s ###\n[Peer]\nPublicKey = %s\nPresharedKey = FAKEPSKSECRET\n"
                      "AllowedIPs = %s/32\n### end %s ###\n" % (name, pub, dotted, name))
     with open(CLIENTS, "a") as handle:

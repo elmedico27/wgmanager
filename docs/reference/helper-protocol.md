@@ -5,7 +5,7 @@ outline: deep
 
 # Helper protocol
 
-This page describes the helper (version 0.1.4): the small program on your server
+This page describes the helper (version 0.1.5): the small program on your server
 that WG Manager runs over SSH. The web app reaches the server only through the
 requests and responses below. `wgmanager-host doctor` runs the same preflight
 checks as the helper (section 10).
@@ -179,8 +179,10 @@ are fixed strings; they never echo caller input.
 
 stderr carries nothing the app should parse. The helper logs to the system
 journal (identifier `wgmanager-helper`): `action=add client=Bob_Phone result=ok`
-or `result=error:backend_failed`. **Config text, keys and PiVPN output are never
-logged.**
+or `result=error:backend_failed`. Every `add`, `remove`, `enable`, `disable` and
+`get-config` is logged, success or failure, so the journal shows which client
+configs (and so which private keys) were read. **Config text, keys and PiVPN
+output are never logged**, only the action, client name and result.
 
 ## 6. Actions
 
@@ -194,7 +196,7 @@ host is otherwise misconfigured. `pivpn_scripts` is diagnostic only (`null` for 
 unreadable script); it is never enforced.
 
 ```json
-{"helper_version": "0.1.4", "protocol": 1, "backend": "pivpn", "interface": "wg0",
+{"helper_version": "0.1.5", "protocol": 1, "backend": "pivpn", "interface": "wg0",
  "pivpn_scripts": {"makeCONF.sh": "<sha256>", "removeCONF.sh": "<sha256>",
                    "enableCONF.sh": "<sha256>", "disableCONF.sh": "<sha256>"}}
 ```
@@ -285,8 +287,9 @@ that runs an arbitrary command.
 ## 7. Reading state
 
 All files are opened by constructed absolute path from validated names only.
-Reads use `O_NOFOLLOW`, require a regular file, and cap size (clients.txt 1 MiB,
-a client config 8 KiB).
+Reads use `O_NOFOLLOW` and `O_NONBLOCK` (so a FIFO is refused instead of
+blocking), require a regular file, and cap size (clients.txt 1 MiB, a client
+config 8 KiB).
 
 - **`<WG_DIR>/configs/clients.txt`**: one client per line,
   `name public_key created_epoch address_decimal`. Fields are validated
@@ -323,7 +326,7 @@ Common procedure for `add`, `remove`, `enable`, `disable`:
 3. Read state and check preconditions (table below).
 4. **Back up** `wg0.conf` and `clients.txt` to
    `/var/backups/wgmanager/<UTC timestamp to the ms>-<action>-<name>.{<iface>.conf,clients.txt}`
-   (root-only, mode 0600; keep the newest `BACKUP_KEEP`, default 20). If the backup
+   as byte-for-byte copies (root-only, mode 0600; keep the newest `BACKUP_KEEP`, default 20). If the backup
    cannot be written the change is aborted before anything is touched. The backup
    holds the server private key, exactly like the file it copies.
 5. Run the backend with a fixed argument list, working directory `/`, empty
