@@ -234,6 +234,28 @@ class VersionTests(HelperTestCase):
         os.unlink(self.env.p("scripts/makeCONF.sh"))
         self.assertIsNone(self.ok("version")["pivpn_scripts"]["makeCONF.sh"])
 
+    def test_symlinked_script_is_hashed_as_its_target(self):
+        script = self.env.p("scripts/makeCONF.sh")
+        expected = self.ok("version")["pivpn_scripts"]["makeCONF.sh"]
+        os.rename(script, self.env.p("makeCONF.real"))
+        os.symlink(self.env.p("makeCONF.real"), script)
+        self.assertEqual(self.ok("version")["pivpn_scripts"]["makeCONF.sh"], expected)
+
+    def test_unsafe_scripts_report_null_without_hanging(self):
+        # `version` runs before preflight: a FIFO (directly or behind a link),
+        # a device or an oversized file must not stall it or be read unbounded.
+        scripts = self.env.p("scripts")
+        os.unlink(os.path.join(scripts, "makeCONF.sh"))
+        os.mkfifo(os.path.join(scripts, "makeCONF.sh"))
+        os.unlink(os.path.join(scripts, "removeCONF.sh"))
+        os.mkfifo(self.env.p("fifo"))
+        os.symlink(self.env.p("fifo"), os.path.join(scripts, "removeCONF.sh"))
+        os.unlink(os.path.join(scripts, "enableCONF.sh"))
+        os.symlink("/dev/zero", os.path.join(scripts, "enableCONF.sh"))
+        self.env.write("scripts/disableCONF.sh", "x" * (h.MAX_SCRIPT_HASHED + 1))
+        self.assertEqual(self.ok("version")["pivpn_scripts"],
+                         {name: None for name in DIAG_SCRIPTS})
+
 
 class ListTests(HelperTestCase):
     def test_list_states_and_no_secrets(self):

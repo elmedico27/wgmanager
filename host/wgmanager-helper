@@ -40,6 +40,7 @@ MAX_SERVER_CONF = 1024 * 1024
 MAX_CLIENT_CONF = 8 * 1024
 MAX_SETTINGS_FILE = 8 * 1024
 MAX_SETUPVARS = 64 * 1024
+MAX_SCRIPT_HASHED = 1024 * 1024
 
 LOCK_TIMEOUT = 10.0      # seconds to wait for the mutation lock
 BACKEND_TIMEOUT = 30     # seconds for one pivpn call
@@ -670,13 +671,17 @@ def find_client(snap, name):
 # --- read-only actions -------------------------------------------------------
 
 def sha256_of(path):
+    """SHA-256 of a PiVPN script for `version`, or None if it cannot be read safely.
+
+    `version` runs before preflight, so nothing about the scripts directory has
+    been vetted yet. A symlink is resolved once (installs may link scripts in);
+    the target is then read like every other file: regular files only, opened
+    non-blocking (a FIFO cannot stall the helper) and capped in size.
+    """
     try:
-        digest = hashlib.sha256()
-        with open(path, "rb") as handle:
-            for chunk in iter(lambda: handle.read(65536), b""):
-                digest.update(chunk)
-        return digest.hexdigest()
-    except OSError:
+        return hashlib.sha256(
+            read_bytes(os.path.realpath(path), MAX_SCRIPT_HASHED)).hexdigest()
+    except (OSError, ValueError):
         return None
 
 

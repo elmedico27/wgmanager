@@ -192,8 +192,10 @@ incompatible change to this section. `helper_version` is informational.
 ### version
 
 Runs without preflight, so the app can report a protocol mismatch even when the
-host is otherwise misconfigured. `pivpn_scripts` is diagnostic only (`null` for an
-unreadable script); it is never enforced.
+host is otherwise misconfigured. `pivpn_scripts` is diagnostic only; it is never
+enforced. Each script is read like any other file (a symlink is resolved once,
+then the target must be a regular file of at most 1 MiB); anything else, or a
+missing script, is `null`.
 
 ```json
 {"helper_version": "0.1.5", "protocol": 1, "backend": "pivpn", "interface": "wg0",

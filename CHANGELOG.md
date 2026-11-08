@@ -48,6 +48,9 @@ update it.
   successful change into a generic "internal error".
 - **Helper:** a FIFO where a file is expected is refused instead of hanging the
   helper.
+- **Helper:** `version` reads PiVPN's scripts safely when it hashes them: a
+  FIFO, device or file over 1 MiB is reported as `null` instead of hanging the
+  helper or being read without limit.
 
 ### Security
 
