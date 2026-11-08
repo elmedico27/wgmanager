@@ -798,8 +798,17 @@ def prune_backups(settings):
                 pass
 
 
-def verify(settings, check):
+# The postconditions each mutation verifies (section 8.1 vocabulary, fixed order).
+ADD_REMOVE_CHECKS = ("client_record", "client_config_file", "server_config_block", "live_peer")
+TOGGLE_CHECKS = ("client_record", "server_config_block", "live_peer")
+
+
+def verify(settings, check, checks):
     """Re-read state until `check(snapshot)` returns no failures or time runs out.
+
+    `checks` names every postcondition `check` can report. If state cannot be
+    read at all, each of them is unconfirmed and all are reported, but never
+    one this action does not check.
 
     Returns (failed, snap). On success `snap` is the snapshot that passed, so
     callers report exactly the state that was verified (no second read for
@@ -812,8 +821,7 @@ def verify(settings, check):
             snap = snapshot(settings)
             failed = check(snap)
         except HelperError:
-            failed = ["client_record", "client_config_file",
-                      "server_config_block", "live_peer"]
+            failed = list(checks)
         if not failed or time.monotonic() >= deadline:
             return failed, snap
         time.sleep(VERIFY_INTERVAL)
@@ -825,7 +833,7 @@ def backend_failure(failed, partial, exit_code, backup):
         "backend_exit_code": exit_code, "backup": backup})
 
 
-def run_backend(settings, action, name, argv, check):
+def run_backend(settings, action, name, argv, check, checks):
     """Back up, run the backend, verify. Raises backend_failed on any doubt.
 
     Returns (backup, exit_code, snap): the backup's base name, the backend's
@@ -840,7 +848,7 @@ def run_backend(settings, action, name, argv, check):
         timed_out = True
     except OSError:
         raise backend_failure(["backend_not_run"], False, None, backup)
-    failed, snap = verify(settings, check)
+    failed, snap = verify(settings, check, checks)
     if timed_out:
         failed = ["backend_timeout"] + failed
     if failed:
@@ -873,7 +881,8 @@ def action_add(settings, name):
 
     # No -ip: older PiVPN scripts lack it; newer ones auto-allocate on empty stdin.
     backup, exit_code, final = run_backend(
-        settings, "add", name, [settings.pivpn_exec, "add", "-n", name], check)
+        settings, "add", name, [settings.pivpn_exec, "add", "-n", name], check,
+        ADD_REMOVE_CHECKS)
     config = read_client_conf(settings, name)
     if config is None:
         raise backend_failure(["client_config_file"], True, exit_code, backup)
@@ -898,7 +907,7 @@ def action_remove(settings, name):
         return failed
 
     run_backend(settings, "remove", name,
-                [settings.pivpn_exec, "remove", "--yes", name], check)
+                [settings.pivpn_exec, "remove", "--yes", name], check, ADD_REMOVE_CHECKS)
     return {"name": name, "removed": True}
 
 
@@ -938,7 +947,8 @@ def action_toggle(settings, action, name):
 
     verb = "on" if want_enabled else "off"
     _, _, final = run_backend(
-        settings, action, name, [settings.pivpn_exec, verb, "--yes", name], check)
+        settings, action, name, [settings.pivpn_exec, verb, "--yes", name], check,
+        TOGGLE_CHECKS)
     return {"client": client_entry(final, final["by_name"][name]), "changed": True}
 
 

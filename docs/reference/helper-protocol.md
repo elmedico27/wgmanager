@@ -388,6 +388,9 @@ structured detail so WG Manager can show a clear, persistent warning:
   (clients.txt entry), `client_config_file`, `server_config_block` (marker block
   in the server config), `live_peer` (peer on the running interface),
   `backend_timeout`, `backend_not_run`.
+- If state cannot be re-read at all after the backend ran, every check that
+  action makes is listed (none of them could be confirmed). Enable and disable
+  never list `client_config_file`, because they don't check it.
 - `partial` is `true` when any postcondition could not be confirmed, i.e. the
   host may now differ from what the app showed before the request.
 - `backup` names the pre-change backup (basename only, no path), so the UI can

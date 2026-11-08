@@ -474,8 +474,8 @@ class AddTests(HelperTestCase):
         original = h.verify
         self.addCleanup(setattr, h, "verify", original)
 
-        def verify_then_meddle(settings, check):
-            result = original(settings, check)
+        def verify_then_meddle(*args):
+            result = original(*args)
             subprocess.run([self.env.p("bin/pivpn"), "remove", "--yes", "Bob"], check=True)
             return result
 
@@ -626,6 +626,43 @@ class ToggleTests(HelperTestCase):
         e = self.err("disable Alpha", "backend_failed", 5)
         self.assertTrue(e["partial"])
         self.assertEqual(e["failed_checks"], ["live_peer"])
+
+
+class UnreadableStateTests(HelperTestCase):
+    """State that cannot be re-read after the backend ran: every check the
+    action makes is unconfirmed, and none it does not make is reported."""
+
+    def break_snapshots_after_first(self):
+        original = h.snapshot
+        self.addCleanup(setattr, h, "snapshot", original)
+        calls = []
+
+        def snapshot(settings):
+            calls.append(1)
+            if len(calls) > 1:
+                raise h.HelperError("host_misconfigured")
+            return original(settings)
+
+        h.snapshot = snapshot
+
+    def test_toggle_reports_only_its_own_checks(self):
+        self.env.seed("Alpha")
+        self.break_snapshots_after_first()
+        e = self.err("disable Alpha", "backend_failed", 5)
+        self.assertTrue(e["partial"])
+        self.assertEqual(e["failed_checks"], list(h.TOGGLE_CHECKS))
+        self.assertNotIn("client_config_file", e["failed_checks"])
+
+    def test_add_reports_all_four(self):
+        self.break_snapshots_after_first()
+        e = self.err("add Bob", "backend_failed", 5)
+        self.assertEqual(e["failed_checks"], list(h.ADD_REMOVE_CHECKS))
+
+    def test_remove_reports_all_four(self):
+        self.env.seed("Alpha")
+        self.break_snapshots_after_first()
+        e = self.err("remove Alpha", "backend_failed", 5)
+        self.assertEqual(e["failed_checks"], list(h.ADD_REMOVE_CHECKS))
 
 
 class BackupTests(HelperTestCase):

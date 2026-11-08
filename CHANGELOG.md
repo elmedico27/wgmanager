@@ -48,6 +48,9 @@ update it.
   successful change into a generic "internal error".
 - **Helper:** a FIFO where a file is expected is refused instead of hanging the
   helper.
+- **Helper:** if PiVPN's files can't be re-read after enabling or disabling a
+  client, the warning no longer says the client's config file check failed;
+  enable and disable don't check that file.
 - **Helper:** `version` reads PiVPN's scripts safely when it hashes them: a
   FIFO, device or file over 1 MiB is reported as `null` instead of hanging the
   helper or being read without limit.
