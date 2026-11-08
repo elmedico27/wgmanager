@@ -710,6 +710,58 @@ class BackupTests(HelperTestCase):
         self.assertEqual(self.env.calls(), [])
 
 
+class MutationPathTests(HelperTestCase):
+    """Where a change writes: the lock file and the backup directory."""
+
+    def assert_change_refused_but_reads_work(self, **overrides):
+        self.env.seed("Alpha")
+        self.err("disable Alpha", "host_misconfigured", 6, **overrides)
+        self.assertEqual(self.env.calls(), [])
+        self.ok("list", **overrides)
+        self.ok("get-config Alpha", **overrides)
+
+    def test_writable_lock_directory_refused(self):
+        os.makedirs(self.env.p("shared"))
+        os.chmod(self.env.p("shared"), 0o1777)            # like /tmp
+        self.assert_change_refused_but_reads_work(LOCK_FILE=self.env.p("shared/lock"))
+
+    def test_writable_backup_parent_refused(self):
+        os.makedirs(self.env.p("shared"))
+        os.chmod(self.env.p("shared"), 0o777)
+        self.assert_change_refused_but_reads_work(BACKUP_DIR=self.env.p("shared/backups"))
+        self.assertFalse(os.path.exists(self.env.p("shared/backups")))
+
+    def test_missing_backup_parent_refused(self):
+        self.assert_change_refused_but_reads_work(BACKUP_DIR=self.env.p("nope/backups"))
+
+    def test_lock_file_writable_by_others_refused(self):
+        self.env.write("lock", "")
+        os.chmod(self.env.p("lock"), 0o666)
+        self.assert_change_refused_but_reads_work()
+
+    def test_lock_file_that_is_not_a_regular_file_refused(self):
+        os.mkfifo(self.env.p("lock"))
+        self.assert_change_refused_but_reads_work()
+
+    def test_symlinked_backup_directory_to_vetted_target(self):
+        # e.g. backups kept on another disk: allowed when the real directory passes.
+        os.makedirs(self.env.p("disk/wgm"), 0o700)
+        os.symlink(self.env.p("disk/wgm"), self.env.p("backups"))
+        self.env.seed("Alpha")
+        self.ok("disable Alpha")
+        self.assertEqual(len(os.listdir(self.env.p("disk/wgm"))), 2)
+
+    def test_symlinked_backup_directory_into_unsafe_parent_refused(self):
+        os.makedirs(self.env.p("shared/wgm"))
+        os.chmod(self.env.p("shared"), 0o777)
+        os.chmod(self.env.p("shared/wgm"), 0o700)
+        os.symlink(self.env.p("shared/wgm"), self.env.p("backups"))
+        self.assert_change_refused_but_reads_work()
+
+    def test_defaults_layout_passes(self):
+        self.assertEqual(h.mutation_path_problems(self.env.settings()), [])
+
+
 class LockTests(HelperTestCase):
     def test_busy_when_lock_held(self):
         fd = os.open(self.env.p("lock"), os.O_CREAT | os.O_RDWR, 0o600)

@@ -62,6 +62,13 @@ update it.
   files in them. Client configs read by `get-config` get the same owner and
   permission check as PiVPN's other files. PiVPN's own defaults already pass;
   `wgmanager-host doctor` shows the fix if yours don't.
+- **Helper:** before a change, the lock file and backup folder must live in
+  folders only root can write to, and the lock file must be a root-owned file
+  others can't write. A symlinked backup folder (for example on another disk) is
+  fine if its real location passes. The defaults (`/run`, `/var/backups`)
+  already pass; if you moved either with `LOCK_FILE` or `BACKUP_DIR`,
+  `wgmanager-host doctor` says what to fix. Viewing clients is never blocked by
+  this.
 - **Helper:** successful `get-config` requests are now logged to the journal
   (action, client name and result only), so you can see which private keys were
   read. Keys and config text are still never logged.

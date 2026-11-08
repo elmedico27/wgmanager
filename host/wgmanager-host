@@ -409,7 +409,14 @@ def check_pivpn(ctx, rep, h):
         rep.ok("pivpn (%s) and wg (%s) found; PiVPN's data folders, files and scripts are root-owned and not "
                "writable by others" % (settings.pivpn_exec, settings.wg_exec))
 
-    backup_dir = settings.backup_dir
+    for what, path, kind in h.mutation_path_problems(settings):
+        rep.fail("%s %s (%s); adding, removing, enabling and disabling clients will be "
+                 "refused" % (what, PROBLEM_TEXT.get(kind, kind), path),
+                 [problem_fix(path, kind) if kind != "missing" else
+                  "create it, or set LOCK_FILE / BACKUP_DIR in %s"
+                  % os.path.join(CONFIG_DIR, "config")])
+
+    backup_dir = os.path.realpath(settings.backup_dir)
     try:
         st = os.lstat(backup_dir)
     except OSError:

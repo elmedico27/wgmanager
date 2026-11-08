@@ -324,7 +324,14 @@ config 8 KiB).
 Common procedure for `add`, `remove`, `enable`, `disable`:
 
 1. Parse and validate the request (sections 4 and 4.1). Run preflight (section 10).
-2. Take an exclusive `flock` on `/run/wgmanager.lock` (retry up to 10 s, else exit 7).
+2. Check where the change will write (else exit 6). `LOCK_FILE` and `BACKUP_DIR` are
+   resolved through symlinks once, and the directory each really lives in must exist,
+   be root-owned and not be group- or world-writable (`/run` and `/var/backups` by
+   default). The lock file itself must be a root-owned regular file that group and
+   others cannot write, and the backup directory a root-owned directory with mode
+   0700 (created if missing). Reads (`list`, `get-config`, `version`) skip this step,
+   so a host that fails it can still be viewed.
+   Then take an exclusive `flock` on `/run/wgmanager.lock` (retry up to 10 s, else exit 7).
    The lock only serializes wgmanager's own calls; it cannot stop someone
    running `pivpn` by hand at the same moment.
 3. Read state and check preconditions (table below).
@@ -418,8 +425,8 @@ unknown keys are an error. Paths must be absolute with no `..` component.
 | `WG_BIN` | `/usr/bin/wg` | absolute path |
 | `PIVPN_SCRIPTS_DIR` | `/opt/pivpn/wireguard` | absolute path (only read, for `version` hashes) |
 | `PIVPN_SETUPVARS` | `/etc/pivpn/wireguard/setupVars.conf` | absolute path |
-| `LOCK_FILE` | `/run/wgmanager.lock` | absolute path |
-| `BACKUP_DIR` | `/var/backups/wgmanager` | absolute path |
+| `LOCK_FILE` | `/run/wgmanager.lock` | absolute path; its directory must be root-owned and not group- or world-writable (section 8) |
+| `BACKUP_DIR` | `/var/backups/wgmanager` | absolute path; may be a symlink; its real parent directory must be root-owned and not group- or world-writable (section 8) |
 | `BACKUP_KEEP` | `20` | integer 1 to 200 |
 
 The public endpoint and client DNS are not helper settings: PiVPN already bakes

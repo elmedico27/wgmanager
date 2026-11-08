@@ -290,6 +290,23 @@ class PivpnTests(DoctorTestCase):
         self.ctx.settings_loader = broken
         self.assertFailMentions(self.doctor(), "not a valid settings file", "config.example")
 
+    def test_unsafe_lock_and_backup_locations_fail(self):
+        shared = os.path.join(self.world.pv, "shared")
+        os.mkdir(shared)
+        os.chmod(shared, 0o777)
+        loader = self.ctx.settings_loader
+
+        def moved(helper):
+            settings = loader(helper)
+            settings.lock_file = os.path.join(shared, "lock")
+            settings.backup_dir = os.path.join(shared, "backups")
+            return settings
+        self.ctx.settings_loader = moved
+        rep = self.doctor()
+        self.assertFailMentions(rep, "lock file's parent directory is writable",
+                                "backup directory's parent directory is writable",
+                                "will be refused", "chmod go-w")
+
     def test_backup_directory_must_be_private(self):
         os.mkdir(os.path.join(self.world.pv, "backups"), 0o755)
         os.chmod(os.path.join(self.world.pv, "backups"), 0o755)
