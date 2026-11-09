@@ -383,6 +383,21 @@ class PreflightRefusalTests(InstallTestCase):
         self.w.chmod("pv/pivpn-real", 0o775)
         self.refused("run 'doctor'")
 
+    def test_unsafe_lock_or_backup_location_blocks_the_install(self):
+        # A LOCK_FILE / BACKUP_DIR moved (in /etc/wgmanager/config) into a folder
+        # others can write to: the helper would refuse every change, so refuse now.
+        shared = os.path.join(self.w.pv, "shared")
+        os.mkdir(shared)
+        os.chmod(shared, 0o777)
+        loader = self.ctx.settings_loader
+        for attr in ("lock_file", "backup_dir"):
+            def moved(helper, attr=attr):
+                settings = loader(helper)
+                setattr(settings, attr, os.path.join(shared, "x"))
+                return settings
+            self.ctx.settings_loader = moved
+            self.refused("parent directory writable")
+
     def test_no_include_line(self):
         self.w.write("etc/ssh/sshd_config", "Port 22\n")
         self.refused("Include /etc/ssh/sshd_config.d/*.conf")

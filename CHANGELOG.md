@@ -11,6 +11,11 @@ the helper too.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-08
+
+Ships helper 0.1.5. Rerun the install command from **Settings › App key** to
+update it.
+
 ### Added
 
 - **Install as an app:** WG Manager now has a web app manifest and icons, so a
@@ -30,6 +35,51 @@ the helper too.
   never cut short. If your current password is longer than 128 bytes you can no
   longer sign in with it: run `docker exec wgmanager wgmanager reset-password` and
   choose a new one.
+
+### Fixed
+
+- **Helper:** a stray non-UTF-8 byte in `wg0.conf` (for example an accented
+  letter in a comment saved as Latin-1) no longer blocks every add, remove,
+  enable and disable with "host is misconfigured". Backups are now byte-for-byte
+  copies.
+- **Helper:** if a new client's config can't be read back after `add`, the
+  error now names the pre-change backup and PiVPN's exit code instead of
+  leaving them empty.
+- **Helper:** a change that passed verification is reported from the state it
+  verified. Before, running `pivpn` by hand at that moment could turn a
+  successful change into a generic "internal error".
+- **Helper:** a FIFO where a file is expected is refused instead of hanging the
+  helper.
+- **Helper:** if PiVPN's files can't be re-read after enabling or disabling a
+  client, the warning no longer says the client's config file check failed;
+  enable and disable don't check that file.
+- **Helper:** PiVPN's output is sent to `/dev/null` instead of being held in
+  memory and discarded. Anything PiVPN leaves running in the background is
+  stopped when it exits, so nothing it started can change files after the
+  helper has answered.
+- **Helper:** `version` reads PiVPN's scripts safely when it hashes them: a
+  FIFO, device or file over 1 MiB is reported as `null` instead of hanging the
+  helper or being read without limit.
+
+### Security
+
+- **Helper:** `/etc/wireguard` and its `configs/` folder (or wherever `WG_DIR`
+  points) must now be root-owned and not writable by group or others, like the
+  files in them. Client configs read by `get-config` get the same owner and
+  permission check as PiVPN's other files. PiVPN's own defaults already pass;
+  `wgmanager-host doctor` shows the fix if yours don't.
+- **Helper:** before a change, the lock file and backup folder must live in
+  folders only root can write to, and the lock file must be a root-owned file
+  others can't write. A symlinked backup folder (for example on another disk) is
+  fine if its real location passes. The defaults (`/run`, `/var/backups`)
+  already pass; if you moved either with `LOCK_FILE` or `BACKUP_DIR` in
+  `/etc/wgmanager/config`, `wgmanager-host doctor` says what to fix. Viewing clients is never blocked by
+  this. `wgmanager-host install` checks the same locations and refuses to
+  install until they are fixed, rather than installing a helper that would
+  refuse every change.
+- **Helper:** successful `get-config` requests are now logged to the journal
+  (action, client name and result only), so you can see which private keys were
+  read. Keys and config text are still never logged.
 
 ## [0.2.1] - 2026-11-06
 
@@ -237,7 +287,8 @@ Verified from source, not run:
   one line per entry, and sshd matches each entry on its own with `*` and `?`
   wildcards only (OpenSSH 10.0p2).
 
-[Unreleased]: https://github.com/elmedico27/wgmanager/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/elmedico27/wgmanager/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/elmedico27/wgmanager/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/elmedico27/wgmanager/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/elmedico27/wgmanager/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/elmedico27/wgmanager/compare/v0.1.2...v0.1.3

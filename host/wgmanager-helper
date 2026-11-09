@@ -28,7 +28,7 @@ import sys
 import syslog
 import time
 
-HELPER_VERSION = "0.1.4"
+HELPER_VERSION = "0.1.5"
 PROTOCOL = 1
 BACKEND = "pivpn"
 
@@ -40,6 +40,7 @@ MAX_SERVER_CONF = 1024 * 1024
 MAX_CLIENT_CONF = 8 * 1024
 MAX_SETTINGS_FILE = 8 * 1024
 MAX_SETUPVARS = 64 * 1024
+MAX_SCRIPT_HASHED = 1024 * 1024
 
 LOCK_TIMEOUT = 10.0      # seconds to wait for the mutation lock
 BACKEND_TIMEOUT = 30     # seconds for one pivpn call
@@ -99,6 +100,11 @@ SETTING_DEFAULTS = {
 PATH_SETTINGS = ("WG_DIR", "PIVPN_BIN", "PIVPN_SCRIPTS_DIR", "PIVPN_SETUPVARS",
                  "WG_BIN", "BACKUP_DIR", "LOCK_FILE")
 DIAGNOSTIC_SCRIPTS = ("makeCONF.sh", "removeCONF.sh", "enableCONF.sh", "disableCONF.sh")
+MUTATIONS = ("add", "remove", "enable", "disable")
+# Actions whose outcome goes to the journal (name and result only). get-config is
+# included because it hands out a private key: who read which key is the audit
+# trail an admin needs after a compromise. The key itself is never logged.
+AUDITED_ACTIONS = MUTATIONS + ("get-config",)
 
 
 class HelperError(Exception):
@@ -133,13 +139,6 @@ def log(level, message):
 
 # --- settings ----------------------------------------------------------------
 
-class _OwnerPolicy:
-    """The one attribute read_text() needs, before a Settings object exists."""
-
-    def __init__(self, enforce_owner):
-        self.enforce_owner = enforce_owner
-
-
 class Settings:
     def __init__(self, values, enforce_owner):
         self.interface = values["WG_INTERFACE"]
@@ -158,15 +157,19 @@ class Settings:
 
     @property
     def clients_txt(self):
-        return os.path.join(self.wg_dir, "configs", "clients.txt")
+        return os.path.join(self.configs_dir, "clients.txt")
 
     @property
     def server_conf(self):
         return os.path.join(self.wg_dir, self.interface + ".conf")
 
+    @property
+    def configs_dir(self):
+        return os.path.join(self.wg_dir, "configs")
+
     def client_conf(self, name):
         # `name` has already passed NAME_RE: no separators, no dots.
-        return os.path.join(self.wg_dir, "configs", name + ".conf")
+        return os.path.join(self.configs_dir, name + ".conf")
 
 
 def mode_unsafe(st):
@@ -174,26 +177,34 @@ def mode_unsafe(st):
     return bool(st.st_mode & 0o022)
 
 
-def read_text(path, cap, settings=None, errors="strict"):
-    """Read a regular file (never following a final symlink), capped, as UTF-8.
+def read_bytes(path, cap, enforce_owner=None):
+    """Read a regular file (never following a final symlink), capped.
 
-    With `settings`, the file actually opened must also be root-owned (when
-    owners are enforced) and not group/world-writable. Checking the open file
-    descriptor, not the path, means a file swapped in after an earlier check
-    is still refused.
+    With `enforce_owner` set (True or False), the file actually opened must
+    also not be group/world-writable, and when True, must be root-owned.
+    Checking the open file descriptor, not the path, means a file swapped in
+    after an earlier check is still refused.
+
+    O_NONBLOCK: opening a FIFO for reading would otherwise block forever before
+    the regular-file check could refuse it. It changes nothing for regular files.
     """
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
     with os.fdopen(fd, "rb") as handle:
         st = os.fstat(handle.fileno())
         if not stat.S_ISREG(st.st_mode):
             raise ValueError("not a regular file")
-        if settings is not None and (
-                mode_unsafe(st) or (settings.enforce_owner and st.st_uid != 0)):
+        if enforce_owner is not None and (
+                mode_unsafe(st) or (enforce_owner and st.st_uid != 0)):
             raise ValueError("unsafe mode or owner")
         data = handle.read(cap + 1)
     if len(data) > cap:
         raise ValueError("file too large")
-    return data.decode("utf-8", errors)
+    return data
+
+
+def read_text(path, cap, enforce_owner=None, errors="strict"):
+    """read_bytes(), decoded as UTF-8."""
+    return read_bytes(path, cap, enforce_owner).decode("utf-8", errors)
 
 
 def load_settings(config_path, enforce_owner):
@@ -211,8 +222,7 @@ def load_settings(config_path, enforce_owner):
             log(syslog.LOG_ERR, "config file has unsafe type, mode or owner")
             raise HelperError("host_misconfigured")
         try:
-            text = read_text(config_path, MAX_SETTINGS_FILE,
-                             _OwnerPolicy(enforce_owner))
+            text = read_text(config_path, MAX_SETTINGS_FILE, enforce_owner)
         except (OSError, ValueError):
             log(syslog.LOG_ERR, "config file could not be read safely")
             raise HelperError("host_misconfigured")
@@ -267,23 +277,31 @@ def parse_request(request):
 
 # --- subprocess --------------------------------------------------------------
 
-def run(argv, timeout):
+def run(argv, timeout, capture=True):
     """Run a fixed argument list. No shell, no stdin, minimal environment.
 
+    With capture=False (the backend) stdout and stderr go to /dev/null: that
+    output is never read or logged, so it is not held in memory either.
+
     The child gets its own process group. `pivpn` is a shell script that starts
-    further scripts; on timeout the WHOLE group is killed, so nothing it started
-    can keep editing WireGuard's files after the helper reports back and
-    releases the lock.
+    further scripts; the WHOLE group is killed on timeout and again once the
+    command has exited, so nothing it started can keep editing WireGuard's files
+    after the helper reports back and releases the lock. (Captured pipes used to
+    make the helper wait for such leftovers; /dev/null does not.)
     """
+    output = subprocess.PIPE if capture else subprocess.DEVNULL
     proc = subprocess.Popen(
-        argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, env=SAFE_ENV, cwd="/", shell=False,
-        start_new_session=True)
+        argv, stdin=subprocess.DEVNULL, stdout=output, stderr=output,
+        env=SAFE_ENV, cwd="/", shell=False, start_new_session=True)
     try:
         out, err = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         kill_group(proc)
         raise BackendTimeout()
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)     # leftovers only; usually ESRCH
+    except OSError:
+        pass
     return subprocess.CompletedProcess(argv, proc.returncode, out, err)
 
 
@@ -307,7 +325,8 @@ def kill_group(proc):
 # --- preflight ---------------------------------------------------------------
 
 # Each check reports a problem as a short kind string, or None when fine:
-#   missing | not_regular | writable | not_root | not_executable | not_running_as_root
+#   missing | not_regular | not_directory | writable | not_root | not_executable
+#   | not_running_as_root
 # `wgmanager-host doctor` imports preflight_problems() so that it and the helper
 # can never disagree about what a healthy host looks like.
 
@@ -318,6 +337,27 @@ def _file_problem(path, settings):
         return "missing"
     if not stat.S_ISREG(st.st_mode):
         return "not_regular"
+    if mode_unsafe(st):
+        return "writable"
+    if settings.enforce_owner and st.st_uid != 0:
+        return "not_root"
+    return None
+
+
+def _dir_problem(path, settings):
+    """Like _file_problem, for a directory whose files the helper trusts.
+
+    O_NOFOLLOW only guards the last path component, and the per-file checks only
+    the file that was opened. Whoever can write to the directory can rename,
+    replace or hard-link entries in it, so the directory must be as trustworthy
+    as its files. Links are followed: what matters is the directory used.
+    """
+    try:
+        st = os.stat(path)
+    except OSError:
+        return "missing"
+    if not stat.S_ISDIR(st.st_mode):
+        return "not_directory"
     if mode_unsafe(st):
         return "writable"
     if settings.enforce_owner and st.st_uid != 0:
@@ -358,6 +398,11 @@ def preflight_problems(settings):
     problems = []
     if settings.enforce_owner and os.geteuid() != 0:
         problems.append(("helper", "", "not_running_as_root"))
+    for what, path in (("WireGuard directory", settings.wg_dir),
+                       ("client configs directory", settings.configs_dir)):
+        kind = _dir_problem(path, settings)
+        if kind:
+            problems.append((what, path, kind))
     for what, path in (("clients.txt", settings.clients_txt),
                        ("server config", settings.server_conf),
                        ("PiVPN setupVars", settings.pivpn_setupvars)):
@@ -389,14 +434,11 @@ def _scripts_problems(settings):
 
 
 def _script_dir_problems(directory, settings, required):
-    try:
-        st = os.stat(directory)
-    except OSError:
-        return [("PiVPN scripts directory", directory, "missing")] if required else []
-    if mode_unsafe(st):
-        return [("PiVPN scripts directory", directory, "writable")]
-    if settings.enforce_owner and st.st_uid != 0:
-        return [("PiVPN scripts directory", directory, "not_root")]
+    if not required and not os.path.exists(directory):
+        return []
+    kind = _dir_problem(directory, settings)
+    if kind:
+        return [("PiVPN scripts directory", directory, kind)]
     problems = []
     try:
         names = sorted(os.listdir(directory))
@@ -438,7 +480,8 @@ def read_vpn_subnet(settings):
     caller then skips the address check and says so).
     """
     try:
-        text = read_text(settings.pivpn_setupvars, MAX_SETUPVARS, settings, "replace")
+        text = read_text(settings.pivpn_setupvars, MAX_SETUPVARS,
+                         settings.enforce_owner, "replace")
     except (OSError, ValueError):
         return None
     values = {}
@@ -519,10 +562,14 @@ def read_live(settings):
 
     The dump contains the interface private key and every preshared key. Only
     public information is copied out of it; the rest is discarded here.
+
+    Runs only the `wg` that preflight vetted (settings.wg_exec), never the
+    configured path; without a preflight there is nothing to run.
     """
+    if settings.wg_exec is None:
+        return None
     try:
-        proc = run([settings.wg_exec or settings.wg_bin, "show", settings.interface, "dump"],
-                   WG_TIMEOUT)
+        proc = run([settings.wg_exec, "show", settings.interface, "dump"], WG_TIMEOUT)
     except (BackendTimeout, OSError):
         return None
     if proc.returncode != 0:
@@ -558,8 +605,10 @@ def read_live(settings):
 def snapshot(settings):
     try:
         # A stray non-UTF-8 byte spoils one line (reported as malformed), not the list.
-        clients_text = read_text(settings.clients_txt, MAX_CLIENTS_TXT, settings, "replace")
-        conf_text = read_text(settings.server_conf, MAX_SERVER_CONF, settings, "replace")
+        clients_text = read_text(settings.clients_txt, MAX_CLIENTS_TXT,
+                                 settings.enforce_owner, "replace")
+        conf_text = read_text(settings.server_conf, MAX_SERVER_CONF,
+                              settings.enforce_owner, "replace")
     except (OSError, ValueError):
         raise HelperError("host_misconfigured")
     subnet = read_vpn_subnet(settings)
@@ -580,11 +629,14 @@ def is_live(snap, client):
     return snap["live"] is not None and client["public_key"] in snap["live"]["peers"]
 
 
+LIVE_FIELDS = ("endpoint", "latest_handshake", "transfer_rx", "transfer_tx")
+
+
 def client_entry(snap, client):
     live_peer = None
     if snap["live"] is not None:
         live_peer = snap["live"]["peers"].get(client["public_key"])
-    return {
+    entry = {
         "name": client["name"],
         "public_key": client["public_key"],
         "address": client["address"],
@@ -592,11 +644,10 @@ def client_entry(snap, client):
         "enabled": snap["markers"].get(client["name"]),
         "live": live_peer is not None,
         "manageable": client["manageable"],
-        "endpoint": live_peer["endpoint"] if live_peer else None,
-        "latest_handshake": live_peer["latest_handshake"] if live_peer else None,
-        "transfer_rx": live_peer["transfer_rx"] if live_peer else None,
-        "transfer_tx": live_peer["transfer_tx"] if live_peer else None,
     }
+    for field in LIVE_FIELDS:
+        entry[field] = live_peer[field] if live_peer else None
+    return entry
 
 
 def conf_file_exists(settings, name):
@@ -609,7 +660,7 @@ def conf_file_exists(settings, name):
 
 def read_client_conf(settings, name):
     try:
-        return read_text(settings.client_conf(name), MAX_CLIENT_CONF)
+        return read_text(settings.client_conf(name), MAX_CLIENT_CONF, settings.enforce_owner)
     except (OSError, ValueError):
         return None
 
@@ -628,13 +679,17 @@ def find_client(snap, name):
 # --- read-only actions -------------------------------------------------------
 
 def sha256_of(path):
+    """SHA-256 of a PiVPN script for `version`, or None if it cannot be read safely.
+
+    `version` runs before preflight, so nothing about the scripts directory has
+    been vetted yet. A symlink is resolved once (installs may link scripts in);
+    the target is then read like every other file: regular files only, opened
+    non-blocking (a FIFO cannot stall the helper) and capped in size.
+    """
     try:
-        digest = hashlib.sha256()
-        with open(path, "rb") as handle:
-            for chunk in iter(lambda: handle.read(65536), b""):
-                digest.update(chunk)
-        return digest.hexdigest()
-    except OSError:
+        return hashlib.sha256(
+            read_bytes(os.path.realpath(path), MAX_SCRIPT_HASHED)).hexdigest()
+    except (OSError, ValueError):
         return None
 
 
@@ -684,8 +739,41 @@ def action_get_config(settings, name):
 
 # --- mutations ---------------------------------------------------------------
 
-def acquire_lock(path):
-    fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
+def mutation_path_problems(settings):
+    """Problems with where a change writes, as (what, path, kind) tuples.
+
+    The lock file and the backup directory are resolved through symlinks once,
+    like the executables, and the directory each really lives in must be as
+    trustworthy as the files in it: otherwise another user could hold the lock
+    for ever, or swap the backup directory for one they control. Checked only
+    before a change, so a host that fails these can still list clients.
+    `wgmanager-host doctor` imports this too.
+    """
+    problems = []
+    for what, path in (("lock file", settings.lock_file),
+                       ("backup directory", settings.backup_dir)):
+        parent = os.path.dirname(os.path.realpath(path))
+        kind = _dir_problem(parent, settings)
+        if kind:
+            problems.append(("%s's parent directory" % what, parent, kind))
+    return problems
+
+
+def acquire_lock(settings):
+    """Take the mutation lock on the vetted real path of LOCK_FILE.
+
+    The file actually opened must be a regular file, not group/world-writable
+    and (when owners are enforced) root-owned: one another user created or can
+    write to would let them hold the lock and stall every change.
+    """
+    fd = os.open(os.path.realpath(settings.lock_file),
+                 os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+    st = os.fstat(fd)
+    if not stat.S_ISREG(st.st_mode) or mode_unsafe(st) or (
+            settings.enforce_owner and st.st_uid != 0):
+        os.close(fd)
+        log(syslog.LOG_ERR, "lock file has unsafe type, mode or owner")
+        raise HelperError("host_misconfigured")
     deadline = time.monotonic() + LOCK_TIMEOUT
     while True:
         try:
@@ -703,10 +791,16 @@ def acquire_lock(path):
 
 def make_backup(settings, action, name):
     """Copy the server config and clients.txt to the backup dir. Fail closed."""
+    # The real directory, whose parent mutation_path_problems() vetted.
+    backup_dir = os.path.realpath(settings.backup_dir)
     try:
-        os.makedirs(settings.backup_dir, mode=0o700, exist_ok=True)
-        st = os.stat(settings.backup_dir)
-        if (st.st_mode & 0o077) or (settings.enforce_owner and st.st_uid != 0):
+        try:
+            os.mkdir(backup_dir, 0o700)
+        except FileExistsError:
+            pass
+        st = os.lstat(backup_dir)
+        if (not stat.S_ISDIR(st.st_mode) or (st.st_mode & 0o077)
+                or (settings.enforce_owner and st.st_uid != 0)):
             log(syslog.LOG_ERR, "backup directory is not private")
             raise HelperError("host_misconfigured")
         now = time.time()
@@ -718,15 +812,17 @@ def make_backup(settings, action, name):
             (settings.clients_txt, "clients.txt", MAX_CLIENTS_TXT),
         )
         for src, suffix, cap in sources:
-            data = read_text(src, cap).encode("utf-8")
-            dst = os.path.join(settings.backup_dir, base + "." + suffix)
+            # Raw bytes: a byte-exact copy, and a stray non-UTF-8 byte (which
+            # `list` tolerates) must not block every change.
+            data = read_bytes(src, cap, settings.enforce_owner)
+            dst = os.path.join(backup_dir, base + "." + suffix)
             fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
                          | os.O_CLOEXEC, 0o600)
             with os.fdopen(fd, "wb") as handle:
                 handle.write(data)
                 handle.flush()
                 os.fsync(handle.fileno())
-        prune_backups(settings)
+        prune_backups(backup_dir, settings.backup_keep)
         return base
     except HelperError:
         raise
@@ -735,31 +831,46 @@ def make_backup(settings, action, name):
         raise HelperError("host_misconfigured")
 
 
-def prune_backups(settings):
+def prune_backups(backup_dir, keep):
     groups = {}
-    for entry in os.listdir(settings.backup_dir):
+    for entry in os.listdir(backup_dir):
         match = BACKUP_FILE_RE.fullmatch(entry)
         if match:
             groups.setdefault(match.group(1), []).append(entry)
-    for base in sorted(groups, reverse=True)[settings.backup_keep:]:
+    for base in sorted(groups, reverse=True)[keep:]:
         for entry in groups[base]:
             try:
-                os.unlink(os.path.join(settings.backup_dir, entry))
+                os.unlink(os.path.join(backup_dir, entry))
             except OSError:
                 pass
 
 
-def verify(settings, check):
-    """Re-read state until `check(snapshot)` returns no failures or time runs out."""
+# The postconditions each mutation verifies (section 8.1 vocabulary, fixed order).
+ADD_REMOVE_CHECKS = ("client_record", "client_config_file", "server_config_block", "live_peer")
+TOGGLE_CHECKS = ("client_record", "server_config_block", "live_peer")
+
+
+def verify(settings, check, checks):
+    """Re-read state until `check(snapshot)` returns no failures or time runs out.
+
+    `checks` names every postcondition `check` can report. If state cannot be
+    read at all, each of them is unconfirmed and all are reported, but never
+    one this action does not check.
+
+    Returns (failed, snap). On success `snap` is the snapshot that passed, so
+    callers report exactly the state that was verified (no second read for
+    someone running `pivpn` by hand to race with).
+    """
     deadline = time.monotonic() + VERIFY_TIMEOUT
     while True:
+        snap = None
         try:
-            failed = check(snapshot(settings))
+            snap = snapshot(settings)
+            failed = check(snap)
         except HelperError:
-            failed = ["client_record", "client_config_file",
-                      "server_config_block", "live_peer"]
+            failed = list(checks)
         if not failed or time.monotonic() >= deadline:
-            return failed
+            return failed, snap
         time.sleep(VERIFY_INTERVAL)
 
 
@@ -769,18 +880,22 @@ def backend_failure(failed, partial, exit_code, backup):
         "backend_exit_code": exit_code, "backup": backup})
 
 
-def run_backend(settings, action, name, argv, check):
-    """Back up, run the backend, verify. Raises backend_failed on any doubt."""
+def run_backend(settings, action, name, argv, check, checks):
+    """Back up, run the backend, verify. Raises backend_failed on any doubt.
+
+    Returns (backup, exit_code, snap): the backup's base name, the backend's
+    exit code, and the snapshot that passed verification.
+    """
     backup = make_backup(settings, action, name)
     exit_code, timed_out = None, False
     try:
-        proc = run(argv, BACKEND_TIMEOUT)
+        proc = run(argv, BACKEND_TIMEOUT, capture=False)
         exit_code = proc.returncode
     except BackendTimeout:
         timed_out = True
     except OSError:
         raise backend_failure(["backend_not_run"], False, None, backup)
-    failed = verify(settings, check)
+    failed, snap = verify(settings, check, checks)
     if timed_out:
         failed = ["backend_timeout"] + failed
     if failed:
@@ -788,6 +903,7 @@ def run_backend(settings, action, name, argv, check):
     if exit_code not in (0, None):
         log(syslog.LOG_WARNING, "action=%s client=%s backend exit code %s but "
             "state verified" % (action, name, exit_code))
+    return backup, exit_code, snap
 
 
 def action_add(settings, name):
@@ -811,11 +927,12 @@ def action_add(settings, name):
         return failed
 
     # No -ip: older PiVPN scripts lack it; newer ones auto-allocate on empty stdin.
-    run_backend(settings, "add", name, [settings.pivpn_exec, "add", "-n", name], check)
-    final = snapshot(settings)
+    backup, exit_code, final = run_backend(
+        settings, "add", name, [settings.pivpn_exec, "add", "-n", name], check,
+        ADD_REMOVE_CHECKS)
     config = read_client_conf(settings, name)
     if config is None:
-        raise backend_failure(["client_config_file"], True, None, None)
+        raise backend_failure(["client_config_file"], True, exit_code, backup)
     return {"client": client_entry(final, final["by_name"][name]), "config": config}
 
 
@@ -837,7 +954,7 @@ def action_remove(settings, name):
         return failed
 
     run_backend(settings, "remove", name,
-                [settings.pivpn_exec, "remove", "--yes", name], check)
+                [settings.pivpn_exec, "remove", "--yes", name], check, ADD_REMOVE_CHECKS)
     return {"name": name, "removed": True}
 
 
@@ -876,13 +993,19 @@ def action_toggle(settings, action, name):
         return {"client": client_entry(snap, client), "changed": False}
 
     verb = "on" if want_enabled else "off"
-    run_backend(settings, action, name, [settings.pivpn_exec, verb, "--yes", name], check)
-    final = snapshot(settings)
+    _, _, final = run_backend(
+        settings, action, name, [settings.pivpn_exec, verb, "--yes", name], check,
+        TOGGLE_CHECKS)
     return {"client": client_entry(final, final["by_name"][name]), "changed": True}
 
 
 def mutate(settings, action, name):
-    lock_fd = acquire_lock(settings.lock_file)
+    problems = mutation_path_problems(settings)
+    for what, path, kind in problems:
+        log(syslog.LOG_ERR, "preflight: %s (%s): %s" % (what, path, kind))
+    if problems:
+        raise HelperError("host_misconfigured")
+    lock_fd = acquire_lock(settings)
     try:
         if action == "add":
             return action_add(settings, name)
@@ -920,11 +1043,11 @@ def handle(settings_loader, request):
         action, name = parse_request(request)
         settings = settings_loader()
         data = execute(settings, action, name)
-        if action in ("add", "remove", "enable", "disable"):
+        if action in AUDITED_ACTIONS:
             log(syslog.LOG_INFO, "action=%s client=%s result=ok" % (action, name))
         return 0, {"ok": True, "protocol": PROTOCOL, "data": data}
     except HelperError as err:
-        if action in ("add", "remove", "enable", "disable", "get-config"):
+        if action in AUDITED_ACTIONS:
             log(syslog.LOG_WARNING, "action=%s%s result=error:%s" % (
                 action, (" client=%s" % name) if name else "", err.code))
         return error_response(err)

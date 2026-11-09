@@ -333,6 +333,7 @@ def load_helper(ctx):
 PROBLEM_TEXT = {
     "missing": "is missing",
     "not_regular": "is not a regular file (a symlink or directory?)",
+    "not_directory": "is not a directory",
     "writable": "is writable by group or others",
     "not_root": "is not owned by root",
     "not_executable": "is not executable",
@@ -350,6 +351,9 @@ def problem_fix(path, kind):
     if kind == "missing":
         return ("is PiVPN with WireGuard installed? If it lives elsewhere, set the path "
                 "in %s (see config.example)" % os.path.join(CONFIG_DIR, "config"))
+    if kind == "not_directory":
+        return ("expected a directory at %s: check the path settings in %s"
+                % (quoted, os.path.join(CONFIG_DIR, "config")))
     return "put a regular file at %s" % quoted
 
 
@@ -402,10 +406,17 @@ def check_pivpn(ctx, rep, h):
             pass
         rep.fail(line + ")", problem_fix(path, kind))
     if not problems:
-        rep.ok("pivpn (%s) and wg (%s) found; PiVPN's data files and scripts are root-owned and not "
+        rep.ok("pivpn (%s) and wg (%s) found; PiVPN's data folders, files and scripts are root-owned and not "
                "writable by others" % (settings.pivpn_exec, settings.wg_exec))
 
-    backup_dir = settings.backup_dir
+    for what, path, kind in h.mutation_path_problems(settings):
+        rep.fail("%s %s (%s); adding, removing, enabling and disabling clients will be "
+                 "refused" % (what, PROBLEM_TEXT.get(kind, kind), path),
+                 [problem_fix(path, kind) if kind != "missing" else
+                  "create it, or set LOCK_FILE / BACKUP_DIR in %s"
+                  % os.path.join(CONFIG_DIR, "config")])
+
+    backup_dir = os.path.realpath(settings.backup_dir)
     try:
         st = os.lstat(backup_dir)
     except OSError:
@@ -990,7 +1001,9 @@ def preflight_install(ctx, h, args):
     except h.HelperError:
         raise InstallError("%s is not a valid settings file; run doctor for details"
                            % os.path.join(CONFIG_DIR, "config"))
-    problems = h.preflight_problems(settings)
+    # Also where the helper will write (lock file, backups): otherwise the install
+    # succeeds and then every change is refused.
+    problems = h.preflight_problems(settings) + h.mutation_path_problems(settings)
     if problems:
         raise InstallError("the PiVPN/WireGuard side of this host has problems (%s); "
                            "run 'doctor' to see each one with its fix, then try again"

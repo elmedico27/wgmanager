@@ -2,7 +2,7 @@
 //
 // It answers the same request strings with the same JSON documents and exit
 // codes as the real helper (protocol 1). Shapes were copied from the helper
-// source (0.1.4: action_version, action_list, client_entry, ERRORS,
+// source (0.1.5: action_version, action_list, client_entry, ERRORS,
 // backend_failure, the add/remove/toggle check functions) and
 // docs/HELPER-SPEC.md sections 4-8. Client config text follows PiVPN v4.6.2
 // scripts/wireguard/makeCONF.sh. All data is made up.
@@ -10,7 +10,7 @@
 // Never used in production builds: src/lib/api.js imports it only in mock mode.
 
 export const PROTOCOL = 1;
-export const HELPER_VERSION = '0.1.4';
+export const HELPER_VERSION = '0.1.5';
 const IFACE = 'wg0';
 const SUBNET = { base: [10, 0, 0, 0], prefix: 24, text: '10.0.0.0/24' };
 const ENDPOINT_HOST = 'vpn.example.com';

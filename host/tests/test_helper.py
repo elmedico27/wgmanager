@@ -234,6 +234,28 @@ class VersionTests(HelperTestCase):
         os.unlink(self.env.p("scripts/makeCONF.sh"))
         self.assertIsNone(self.ok("version")["pivpn_scripts"]["makeCONF.sh"])
 
+    def test_symlinked_script_is_hashed_as_its_target(self):
+        script = self.env.p("scripts/makeCONF.sh")
+        expected = self.ok("version")["pivpn_scripts"]["makeCONF.sh"]
+        os.rename(script, self.env.p("makeCONF.real"))
+        os.symlink(self.env.p("makeCONF.real"), script)
+        self.assertEqual(self.ok("version")["pivpn_scripts"]["makeCONF.sh"], expected)
+
+    def test_unsafe_scripts_report_null_without_hanging(self):
+        # `version` runs before preflight: a FIFO (directly or behind a link),
+        # a device or an oversized file must not stall it or be read unbounded.
+        scripts = self.env.p("scripts")
+        os.unlink(os.path.join(scripts, "makeCONF.sh"))
+        os.mkfifo(os.path.join(scripts, "makeCONF.sh"))
+        os.unlink(os.path.join(scripts, "removeCONF.sh"))
+        os.mkfifo(self.env.p("fifo"))
+        os.symlink(self.env.p("fifo"), os.path.join(scripts, "removeCONF.sh"))
+        os.unlink(os.path.join(scripts, "enableCONF.sh"))
+        os.symlink("/dev/zero", os.path.join(scripts, "enableCONF.sh"))
+        self.env.write("scripts/disableCONF.sh", "x" * (h.MAX_SCRIPT_HASHED + 1))
+        self.assertEqual(self.ok("version")["pivpn_scripts"],
+                         {name: None for name in DIAG_SCRIPTS})
+
 
 class ListTests(HelperTestCase):
     def test_list_states_and_no_secrets(self):
@@ -397,6 +419,28 @@ class GetConfigTests(HelperTestCase):
         self.env.write("wg/configs/Alpha.conf", "x" * (h.MAX_CLIENT_CONF + 1))
         self.err("get-config Alpha", "backend_failed", 5)
 
+    def test_writable_config_refused(self):
+        # Client configs get the same owner/mode check as PiVPN's other files.
+        self.env.seed("Alpha")
+        os.chmod(self.env.p("wg/configs/Alpha.conf"), 0o666)
+        e = self.err("get-config Alpha", "backend_failed", 5)
+        self.assertEqual(e["failed_checks"], ["client_config_file"])
+
+    def test_fifo_config_refused_without_hanging(self):
+        # Opening a FIFO for reading blocks until a writer appears; the helper
+        # must refuse it instead of waiting forever.
+        self.env.seed("Alpha")
+        os.unlink(self.env.p("wg/configs/Alpha.conf"))
+        os.mkfifo(self.env.p("wg/configs/Alpha.conf"))
+        e = self.err("get-config Alpha", "backend_failed", 5)
+        self.assertEqual(e["failed_checks"], ["client_config_file"])
+
+    def test_success_is_logged_without_the_key(self):
+        self.env.seed("Alpha")
+        self.ok("get-config Alpha")
+        self.assertIn("action=get-config client=Alpha result=ok", self.logged)
+        # assert_no_secrets_logged (a cleanup) checks no key reached the log.
+
 
 # --- mutations ---------------------------------------------------------------
 
@@ -409,6 +453,36 @@ class AddTests(HelperTestCase):
                          ("Bob_Phone", True, True))
         self.assertIn("PrivateKey = FAKEPRIVATEKEY-Bob_Phone", data["config"])
         self.assertEqual(len(self.env.backups()), 2)
+
+    def test_unreadable_config_after_add_names_the_backup(self):
+        # The change went through and was backed up first: the error must say
+        # which backup, not null.
+        self.addCleanup(setattr, h, "read_client_conf", h.read_client_conf)
+        h.read_client_conf = lambda settings, name: None
+        e = self.err("add Bob", "backend_failed", 5)
+        self.assertTrue(e["partial"])
+        self.assertEqual(e["failed_checks"], ["client_config_file"])
+        self.assertEqual(e["backend_exit_code"], 0)
+        self.assertIsNotNone(e["backup"])
+        self.assertIn(e["backup"] + ".clients.txt", self.env.backups())
+
+    def test_reports_the_verified_state_without_rereading(self):
+        # Someone runs `pivpn` by hand right after verification passed. The
+        # helper reports the state it verified rather than failing on a re-read
+        # (before 0.1.5 this was a KeyError and an `internal` error).
+        self.env.seed("Bob")
+        original = h.verify
+        self.addCleanup(setattr, h, "verify", original)
+
+        def verify_then_meddle(*args):
+            result = original(*args)
+            subprocess.run([self.env.p("bin/pivpn"), "remove", "--yes", "Bob"], check=True)
+            return result
+
+        h.verify = verify_then_meddle
+        data = self.ok("disable Bob")
+        self.assertTrue(data["changed"])
+        self.assertEqual((data["client"]["name"], data["client"]["enabled"]), ("Bob", False))
 
     def test_add_passes_no_ip_flag(self):
         self.ok("add Bob")
@@ -461,6 +535,21 @@ class AddTests(HelperTestCase):
         time.sleep(1.2)          # past the moment the orphan would have written
         self.assertFalse(os.path.exists(self.env.p("late_write")),
                          "a process started by the backend survived the timeout")
+
+    def test_nothing_the_backend_left_behind_runs_after_the_reply(self):
+        import time
+        self.env.switch("bg_child")
+        self.ok("add Bob")
+        written_at_reply = os.path.exists(self.env.p("late_write"))
+        time.sleep(1.0)          # past the moment a leftover would have written
+        self.assertEqual(os.path.exists(self.env.p("late_write")), written_at_reply,
+                         "a process started by the backend changed state after the reply")
+
+    def test_backend_output_is_not_captured(self):
+        proc = h.run(["/bin/sh", "-c", "echo out; echo err >&2"], 5, capture=False)
+        self.assertEqual((proc.returncode, proc.stdout, proc.stderr), (0, None, None))
+        proc = h.run(["/bin/sh", "-c", "echo out"], 5)
+        self.assertEqual(proc.stdout, b"out\n")
 
     def test_backend_not_runnable(self):
         os.unlink(self.env.p("bin/pivpn"))
@@ -554,6 +643,43 @@ class ToggleTests(HelperTestCase):
         self.assertEqual(e["failed_checks"], ["live_peer"])
 
 
+class UnreadableStateTests(HelperTestCase):
+    """State that cannot be re-read after the backend ran: every check the
+    action makes is unconfirmed, and none it does not make is reported."""
+
+    def break_snapshots_after_first(self):
+        original = h.snapshot
+        self.addCleanup(setattr, h, "snapshot", original)
+        calls = []
+
+        def snapshot(settings):
+            calls.append(1)
+            if len(calls) > 1:
+                raise h.HelperError("host_misconfigured")
+            return original(settings)
+
+        h.snapshot = snapshot
+
+    def test_toggle_reports_only_its_own_checks(self):
+        self.env.seed("Alpha")
+        self.break_snapshots_after_first()
+        e = self.err("disable Alpha", "backend_failed", 5)
+        self.assertTrue(e["partial"])
+        self.assertEqual(e["failed_checks"], list(h.TOGGLE_CHECKS))
+        self.assertNotIn("client_config_file", e["failed_checks"])
+
+    def test_add_reports_all_four(self):
+        self.break_snapshots_after_first()
+        e = self.err("add Bob", "backend_failed", 5)
+        self.assertEqual(e["failed_checks"], list(h.ADD_REMOVE_CHECKS))
+
+    def test_remove_reports_all_four(self):
+        self.env.seed("Alpha")
+        self.break_snapshots_after_first()
+        e = self.err("remove Alpha", "backend_failed", 5)
+        self.assertEqual(e["failed_checks"], list(h.ADD_REMOVE_CHECKS))
+
+
 class BackupTests(HelperTestCase):
     def test_backup_contents_and_modes(self):
         self.env.seed("Alpha")
@@ -570,6 +696,18 @@ class BackupTests(HelperTestCase):
             self.assertEqual(stat.S_IMODE(os.stat(self.env.p("backups/" + f)).st_mode), 0o600)
         self.assertEqual(stat.S_IMODE(os.stat(self.env.p("backups")).st_mode), 0o700)
 
+    def test_non_utf8_server_config_is_copied_byte_for_byte(self):
+        # `list` tolerates a stray non-UTF-8 byte; it must not block changes.
+        self.env.seed("Alpha")
+        with open(self.env.p("wg/wg0.conf"), "ab") as handle:
+            handle.write(b"# caf\xe9 (Latin-1)\n")
+        with open(self.env.p("wg/wg0.conf"), "rb") as handle:
+            before = handle.read()
+        self.ok("disable Alpha")
+        conf = next(f for f in self.env.backups() if f.endswith(".wg0.conf"))
+        with open(self.env.p("backups/" + conf), "rb") as handle:
+            self.assertEqual(handle.read(), before)
+
     def test_pruning_keeps_newest(self):
         self.env.seed("Alpha")
         for _ in range(3):
@@ -585,6 +723,58 @@ class BackupTests(HelperTestCase):
         self.err("disable Alpha", "host_misconfigured", 6,
                  BACKUP_DIR=self.env.p("not-a-dir/sub"))
         self.assertEqual(self.env.calls(), [])
+
+
+class MutationPathTests(HelperTestCase):
+    """Where a change writes: the lock file and the backup directory."""
+
+    def assert_change_refused_but_reads_work(self, **overrides):
+        self.env.seed("Alpha")
+        self.err("disable Alpha", "host_misconfigured", 6, **overrides)
+        self.assertEqual(self.env.calls(), [])
+        self.ok("list", **overrides)
+        self.ok("get-config Alpha", **overrides)
+
+    def test_writable_lock_directory_refused(self):
+        os.makedirs(self.env.p("shared"))
+        os.chmod(self.env.p("shared"), 0o1777)            # like /tmp
+        self.assert_change_refused_but_reads_work(LOCK_FILE=self.env.p("shared/lock"))
+
+    def test_writable_backup_parent_refused(self):
+        os.makedirs(self.env.p("shared"))
+        os.chmod(self.env.p("shared"), 0o777)
+        self.assert_change_refused_but_reads_work(BACKUP_DIR=self.env.p("shared/backups"))
+        self.assertFalse(os.path.exists(self.env.p("shared/backups")))
+
+    def test_missing_backup_parent_refused(self):
+        self.assert_change_refused_but_reads_work(BACKUP_DIR=self.env.p("nope/backups"))
+
+    def test_lock_file_writable_by_others_refused(self):
+        self.env.write("lock", "")
+        os.chmod(self.env.p("lock"), 0o666)
+        self.assert_change_refused_but_reads_work()
+
+    def test_lock_file_that_is_not_a_regular_file_refused(self):
+        os.mkfifo(self.env.p("lock"))
+        self.assert_change_refused_but_reads_work()
+
+    def test_symlinked_backup_directory_to_vetted_target(self):
+        # e.g. backups kept on another disk: allowed when the real directory passes.
+        os.makedirs(self.env.p("disk/wgm"), 0o700)
+        os.symlink(self.env.p("disk/wgm"), self.env.p("backups"))
+        self.env.seed("Alpha")
+        self.ok("disable Alpha")
+        self.assertEqual(len(os.listdir(self.env.p("disk/wgm"))), 2)
+
+    def test_symlinked_backup_directory_into_unsafe_parent_refused(self):
+        os.makedirs(self.env.p("shared/wgm"))
+        os.chmod(self.env.p("shared"), 0o777)
+        os.chmod(self.env.p("shared/wgm"), 0o700)
+        os.symlink(self.env.p("shared/wgm"), self.env.p("backups"))
+        self.assert_change_refused_but_reads_work()
+
+    def test_defaults_layout_passes(self):
+        self.assertEqual(h.mutation_path_problems(self.env.settings()), [])
 
 
 class LockTests(HelperTestCase):
@@ -687,6 +877,42 @@ class PreflightTests(HelperTestCase):
         shutil.rmtree(self.env.p("scripts"))
         self.err("list", "host_misconfigured", 6)
 
+    def test_scripts_path_that_is_a_file_is_reported_as_such(self):
+        shutil.rmtree(self.env.p("scripts"))
+        self.env.write("scripts", "")
+        self.err("list", "host_misconfigured", 6)
+        problems = h.preflight_problems(self.env.settings())
+        self.assertIn(("PiVPN scripts directory", self.env.p("scripts"), "not_directory"),
+                      problems)
+
+    def test_writable_wireguard_directories_refused(self):
+        # Whoever can write to these can swap or hard-link the files in them.
+        for rel in ("wg", "wg/configs"):
+            os.chmod(self.env.p(rel), 0o777)
+            self.err("list", "host_misconfigured", 6)
+            self.assertIn(("WireGuard directory" if rel == "wg" else "client configs directory",
+                           self.env.p(rel), "writable"),
+                          h.preflight_problems(self.env.settings()))
+            os.chmod(self.env.p(rel), 0o755)
+        self.ok("list")
+
+    def test_wireguard_directory_that_is_a_file_refused(self):
+        shutil.rmtree(self.env.p("wg"))
+        self.env.write("wg", "")
+        problems = h.preflight_problems(self.env.settings())
+        self.assertIn(("WireGuard directory", self.env.p("wg"), "not_directory"), problems)
+        self.assertIn(("client configs directory", self.env.p("wg/configs"), "missing"),
+                      problems)
+
+    def test_fifo_is_refused_without_hanging(self):
+        os.mkfifo(self.env.p("fifo"))
+        with self.assertRaises(ValueError):
+            h.read_text(self.env.p("fifo"), 1024)
+
+    def test_live_state_needs_a_vetted_wg(self):
+        # Without preflight there is no vetted binary, so nothing is run.
+        self.assertIsNone(h.read_live(self.env.settings()))
+
     def test_opened_file_is_checked_not_just_the_path(self):
         # read_text judges the file it actually opened, so a file swapped in after
         # preflight's lstat is still refused.
@@ -694,7 +920,7 @@ class PreflightTests(HelperTestCase):
         os.chmod(path, 0o666)
         settings = self.env.settings()
         with self.assertRaises(ValueError):
-            h.read_text(path, 1024, settings)
+            h.read_text(path, 1024, settings.enforce_owner)
         self.assertIn("[Interface]", h.read_text(path, 1024))     # unchecked read still works
 
     def test_writable_pivpn_refused(self):

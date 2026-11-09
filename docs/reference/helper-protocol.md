@@ -5,7 +5,7 @@ outline: deep
 
 # Helper protocol
 
-This page describes the helper (version 0.1.4): the small program on your server
+This page describes the helper (version 0.1.5): the small program on your server
 that WG Manager runs over SSH. The web app reaches the server only through the
 requests and responses below. `wgmanager-host doctor` runs the same preflight
 checks as the helper (section 10).
@@ -179,8 +179,10 @@ are fixed strings; they never echo caller input.
 
 stderr carries nothing the app should parse. The helper logs to the system
 journal (identifier `wgmanager-helper`): `action=add client=Bob_Phone result=ok`
-or `result=error:backend_failed`. **Config text, keys and PiVPN output are never
-logged.**
+or `result=error:backend_failed`. Every `add`, `remove`, `enable`, `disable` and
+`get-config` is logged, success or failure, so the journal shows which client
+configs (and so which private keys) were read. **Config text, keys and PiVPN
+output are never logged**, only the action, client name and result.
 
 ## 6. Actions
 
@@ -190,11 +192,13 @@ incompatible change to this section. `helper_version` is informational.
 ### version
 
 Runs without preflight, so the app can report a protocol mismatch even when the
-host is otherwise misconfigured. `pivpn_scripts` is diagnostic only (`null` for an
-unreadable script); it is never enforced.
+host is otherwise misconfigured. `pivpn_scripts` is diagnostic only; it is never
+enforced. Each script is read like any other file (a symlink is resolved once,
+then the target must be a regular file of at most 1 MiB); anything else, or a
+missing script, is `null`.
 
 ```json
-{"helper_version": "0.1.4", "protocol": 1, "backend": "pivpn", "interface": "wg0",
+{"helper_version": "0.1.5", "protocol": 1, "backend": "pivpn", "interface": "wg0",
  "pivpn_scripts": {"makeCONF.sh": "<sha256>", "removeCONF.sh": "<sha256>",
                    "enableCONF.sh": "<sha256>", "disableCONF.sh": "<sha256>"}}
 ```
@@ -285,8 +289,9 @@ that runs an arbitrary command.
 ## 7. Reading state
 
 All files are opened by constructed absolute path from validated names only.
-Reads use `O_NOFOLLOW`, require a regular file, and cap size (clients.txt 1 MiB,
-a client config 8 KiB).
+Reads use `O_NOFOLLOW` and `O_NONBLOCK` (so a FIFO is refused instead of
+blocking), require a regular file, and cap size (clients.txt 1 MiB, a client
+config 8 KiB).
 
 - **`<WG_DIR>/configs/clients.txt`**: one client per line,
   `name public_key created_epoch address_decimal`. Fields are validated
@@ -310,27 +315,38 @@ a client config 8 KiB).
   (`public-key preshared-key endpoint allowed-ips latest-handshake transfer-rx transfer-tx persistent-keepalive`;
   only the public key, endpoint, handshake and transfer fields are used).
   Interface down is reported as `up: false`, not as an error.
-- **Client config:** `<WG_DIR>/configs/NAME.conf`, the copy PiVPN keeps.
+- **Client config:** `<WG_DIR>/configs/NAME.conf`, the copy PiVPN keeps. It gets
+  the same open-file check as the files in section 10 (root-owned, not group- or
+  world-writable); one that fails is reported as `client_config_file`.
 
 ## 8. Mutations
 
 Common procedure for `add`, `remove`, `enable`, `disable`:
 
 1. Parse and validate the request (sections 4 and 4.1). Run preflight (section 10).
-2. Take an exclusive `flock` on `/run/wgmanager.lock` (retry up to 10 s, else exit 7).
+2. Check where the change will write (else exit 6). `LOCK_FILE` and `BACKUP_DIR` are
+   resolved through symlinks once, and the directory each really lives in must exist,
+   be root-owned and not be group- or world-writable (`/run` and `/var/backups` by
+   default). The lock file itself must be a root-owned regular file that group and
+   others cannot write, and the backup directory a root-owned directory with mode
+   0700 (created if missing). Reads (`list`, `get-config`, `version`) skip this step,
+   so a host that fails it can still be viewed.
+   Then take an exclusive `flock` on `/run/wgmanager.lock` (retry up to 10 s, else exit 7).
    The lock only serializes wgmanager's own calls; it cannot stop someone
    running `pivpn` by hand at the same moment.
 3. Read state and check preconditions (table below).
 4. **Back up** `wg0.conf` and `clients.txt` to
    `/var/backups/wgmanager/<UTC timestamp to the ms>-<action>-<name>.{<iface>.conf,clients.txt}`
-   (root-only, mode 0600; keep the newest `BACKUP_KEEP`, default 20). If the backup
+   as byte-for-byte copies (root-only, mode 0600; keep the newest `BACKUP_KEEP`, default 20). If the backup
    cannot be written the change is aborted before anything is touched. The backup
    holds the server private key, exactly like the file it copies.
 5. Run the backend with a fixed argument list, working directory `/`, empty
    stdin, a minimal environment (`PATH=/usr/sbin:/usr/bin:/sbin:/bin`,
-   `LC_ALL=C`), `umask 077`, and a 30 s timeout. The backend runs in its own
-   process group; on timeout the whole group is killed, so nothing `pivpn` started
-   can keep changing files after the helper answers and releases the lock.
+   `LC_ALL=C`), `umask 077`, and a 30 s timeout. Its stdout and stderr go to
+   `/dev/null` (they are never read or logged). The backend runs in its own
+   process group, and the whole group is killed on timeout and again once `pivpn`
+   exits, so nothing it started can keep changing files after the helper answers
+   and releases the lock.
 6. Re-read state and verify postconditions (table below). Live-interface checks
    retry for up to 3 s.
 7. Log the result and return it.
@@ -381,6 +397,9 @@ structured detail so WG Manager can show a clear, persistent warning:
   (clients.txt entry), `client_config_file`, `server_config_block` (marker block
   in the server config), `live_peer` (peer on the running interface),
   `backend_timeout`, `backend_not_run`.
+- If state cannot be re-read at all after the backend ran, every check that
+  action makes is listed (none of them could be confirmed). Enable and disable
+  never list `client_config_file`, because they don't check it.
 - `partial` is `true` when any postcondition could not be confirmed, i.e. the
   host may now differ from what the app showed before the request.
 - `backup` names the pre-change backup (basename only, no path), so the UI can
@@ -408,8 +427,8 @@ unknown keys are an error. Paths must be absolute with no `..` component.
 | `WG_BIN` | `/usr/bin/wg` | absolute path |
 | `PIVPN_SCRIPTS_DIR` | `/opt/pivpn/wireguard` | absolute path (only read, for `version` hashes) |
 | `PIVPN_SETUPVARS` | `/etc/pivpn/wireguard/setupVars.conf` | absolute path |
-| `LOCK_FILE` | `/run/wgmanager.lock` | absolute path |
-| `BACKUP_DIR` | `/var/backups/wgmanager` | absolute path |
+| `LOCK_FILE` | `/run/wgmanager.lock` | absolute path; its directory must be root-owned and not group- or world-writable (section 8) |
+| `BACKUP_DIR` | `/var/backups/wgmanager` | absolute path; may be a symlink; its real parent directory must be root-owned and not group- or world-writable (section 8) |
 | `BACKUP_KEEP` | `20` | integer 1 to 200 |
 
 The public endpoint and client DNS are not helper settings: PiVPN already bakes
@@ -427,6 +446,10 @@ Fail with exit 6 `host_misconfigured` (fixed message; detail to the journal) unl
   directory that merely holds a symlink (for example `/usr/local/bin`, which is
   user-owned on some systems) is not trusted or checked: swapping the link can
   only point at something that must itself pass these checks;
+- `<WG_DIR>` and `<WG_DIR>/configs` exist, are directories, root-owned, and not
+  group- or world-writable. Whoever can write to a directory can rename, replace
+  or hard-link the files in it, which `O_NOFOLLOW` and the per-file checks
+  alone cannot stop;
 - `<WG_DIR>/configs/clients.txt`, `<WG_DIR>/<iface>.conf` and PiVPN's
   `setupVars.conf` exist, are regular files, root-owned, not group- or
   world-writable. These files are checked again on the open file descriptor
@@ -438,11 +461,13 @@ Fail with exit 6 `host_misconfigured` (fixed message; detail to the journal) unl
   scripts source shared ones from there (`/opt/pivpn/ipaddr_utils.sh`). Only
   what is present is judged.
 
-Note: PiVPN creates its files mode 644 and `configs/` 755, so private keys are
-readable by any local user. That is a host
-problem independent of wgmanager. Run as root, the helper sets `umask 077` before
-calling PiVPN so anything it creates is private. It does not change PiVPN's
-existing files.
+Note: PiVPN creates its files mode 644 and `configs/` 755. What keeps the private
+keys in them from other local users is `/etc/wireguard` itself, which
+wireguard-tools creates mode 0700. If that directory has been opened up, the keys
+are readable by any local user: a host problem independent of wgmanager (the
+checks above refuse it only when it is *writable*). Run as root, the helper sets
+`umask 077` before calling PiVPN so anything it creates is private. It does not
+change PiVPN's existing files.
 
 ## 11. Implementation rules
 
