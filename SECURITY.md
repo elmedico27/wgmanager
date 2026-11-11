@@ -13,7 +13,7 @@ Please **don't open a public issue** for a security problem. Report it privately
 
 Helpful details:
 
-- the WG Manager version (shown on the **Host** page, or the image tag you run)
+- the WG Manager version (the image tag you run) and the helper version (shown on the **Host** page)
 - what an attacker could do, and what they need first (access to your network, the admin password, a shell on the server, and so on)
 - steps to reproduce
 
@@ -31,7 +31,7 @@ In scope:
 Out of scope:
 
 - problems in PiVPN, WireGuard, OpenSSH, Docker or other tools WG Manager uses; please report those to their own projects
-- setups that expose WG Manager directly to the internet, which the documentation advises against
+- setups that expose WG Manager directly to the internet
 - anything that already requires root on the server
 - the [public demo](https://wgmdemo.pages.dev), which runs in your browser on sample data and has no backend
 

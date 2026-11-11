@@ -4,7 +4,7 @@ const repo = 'https://github.com/elmedico27/wgmanager'
 
 export default defineConfig({
   title: 'WG Manager',
-  description: 'A web page for managing the clients of a PiVPN WireGuard server.',
+  description: 'A web UI for managing the clients of a PiVPN WireGuard server.',
   lang: 'en-US',
   // Served as a GitHub Pages project site: https://elmedico27.github.io/wgmanager/
   base: '/wgmanager/',

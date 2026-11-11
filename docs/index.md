@@ -4,7 +4,7 @@ layout: home
 hero:
   name: WG Manager
   text: A web UI for your PiVPN WireGuard server
-  tagline: Add, enable, disable and delete clients, show QR codes and download configs from your browser.
+  tagline: Add, enable, disable, and delete clients, show QR codes and download configs from your browser.
   image:
     light: /screenshot-light.png
     dark: /screenshot-dark.png
@@ -22,9 +22,15 @@ hero:
 
 features:
   - title: 🔧 Manage WireGuard clients
-    details: Add, delete, enable, and disable clients -- all without opening a terminal.
-  - title: 📲 Easily connect devices
-    details: Display QR codes or download config files for easy client onboarding.
+    details: Add, delete, enable, and disable clients without opening a terminal.
+    link: /guide/web-interface
+    linkText: Web interface guide
+  - title: 📲 Connect devices
+    details: Show a client's QR code to scan with the WireGuard app, or download its config file.
+    link: /guide/web-interface#add-a-client
+    linkText: Add a client
   - title: 🔒 Security focused
-    details: Through a helper app, the UI can only run seven PiVPN commands, nothing else.
+    details: A small helper on your server accepts seven fixed requests from the app, and nothing else.
+    link: /guide/security
+    linkText: Security
 ---

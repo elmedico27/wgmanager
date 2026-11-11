@@ -11,6 +11,14 @@ the helper too.
 
 ## [Unreleased]
 
+### Changed
+
+- **Documentation:** the README and every page of the documentation site were
+  reworked for clarity. Install steps are numbered, the `.env` file is now
+  downloaded in one step, and Troubleshooting and Recovery entries list a cause
+  and a fix. The Helper protocol page was checked against the helper and
+  corrected in several places.
+
 ## [0.3.0] - 2026-11-08
 
 Ships helper 0.1.5. Rerun the install command from **Settings › App key** to
@@ -29,12 +37,12 @@ update it.
 - **Admin password length:** a password must now be 12 to 128 characters. The
   minimum counts characters as people see them (an emoji is one), where it used
   to count UTF-16 units, so a new password of only a few emoji that would have
-  passed before is now refused as too short. The maximum is 128 bytes (it was 1024 characters); plain English
-  letters, digits and symbols are one byte each, accented letters, other scripts
-  and emoji use 2 to 4. A password that is too long is refused with a message,
-  never cut short. If your current password is longer than 128 bytes you can no
-  longer sign in with it: run `docker exec wgmanager wgmanager reset-password` and
-  choose a new one.
+  passed before is now refused as too short. The maximum is 128 bytes (it was
+  1024 characters); plain English letters, digits and symbols are one byte
+  each, accented letters, other scripts and emoji use 2 to 4. A password that
+  is too long is refused with a message, never cut short. If your current
+  password is longer than 128 bytes you can no longer sign in with it: run
+  `docker exec wgmanager wgmanager reset-password` and choose a new one.
 
 ### Fixed
 

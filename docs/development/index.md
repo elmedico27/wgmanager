@@ -7,6 +7,22 @@ outline: deep
 
 How to work on WG Manager's code. To install and use it, see [Getting started](../guide/getting-started).
 
+## Quick start
+
+Run the web UI on your own machine with fake data. This needs Node.js 22.12 or later. The image uses Node 26.
+
+1. Clone the repository and go to `web/`:
+
+   ```sh
+   git clone https://github.com/elmedico27/wgmanager.git
+   cd wgmanager/web
+   ```
+
+2. Install the dependencies: `npm install`
+3. Start the dev server: `npm run dev`. It runs the UI against a built-in mock of the helper. Sign in with any password.
+
+For the rest, see [Web UI](#web-ui), [Backend](#backend) and [Tests](#tests).
+
 ## Repository layout
 
 | Folder | What it holds |
@@ -24,17 +40,25 @@ In `host/`:
 - `etc/`: templates for the sudo rule, the sshd drop-in and the optional `/etc/wgmanager/config` (`config.example`).
 - `tests/`: see [Tests](#tests).
 
-The image ships `host/` at `/opt/wgmanager/host`, and the install command copies it to `/usr/local/lib/wgmanager`. `install` runs as root and copies the helper from wherever `wgmanager-host` sits, so keep that folder writable only by root (or by you, for a checkout).
+The image ships `host/` at `/opt/wgmanager/host`, and the install command copies it to `/usr/local/lib/wgmanager`.
+
+::: warning Keep the host folder locked down
+`install` runs as root and copies the helper from wherever `wgmanager-host` sits. Keep that folder writable only by root (or by you, for a checkout).
+:::
 
 ## Web UI
 
 In `web/`, after `npm install`:
 
-- `npm run dev`: runs the UI against a built-in mock of the helper (`src/mock/`), with fake data only.
-- `npm run dev:real`: the UI dev server against a real backend on port 7501 (see [Backend](#backend)). Requests to `/api` are passed through to it.
-- `npm run build`: the real app into `dist/`. The mock is not included.
-- `npm run build:demo`: the public demo site into `dist-demo/`: the mock built in, and each visitor's changes kept only in their own browser tab.
-- `npm test`: unit tests for the UI's logic that runs without a browser (for now, the client search filter).
+| Command | What it does |
+|---|---|
+| `npm run dev` | Runs the UI against a built-in mock of the helper (`src/mock/`), with fake data only. |
+| `npm run dev:real` | Runs the UI dev server against a real backend on port 7501 (see [Backend](#backend)). Requests to `/api` are passed through to it. |
+| `npm run build` | Builds the real app into `dist/`. The mock is not included. |
+| `npm run build:demo` | Builds the public demo site into `dist-demo/`: the mock built in, and each visitor's changes kept only in their own browser tab. |
+| `npm test` | Runs unit tests for the UI's logic that run without a browser (for now, the client search filter). |
+
+### Demo site
 
 The [live demo](https://wgmdemo.pages.dev) is built by Cloudflare Pages straight from this repository: root directory `web`, build command `npm run build:demo`, output `dist-demo`, Node 26 (`NODE_VERSION`). Every push to `master` rebuilds it.
 
@@ -42,9 +66,11 @@ The [live demo](https://wgmdemo.pages.dev) is built by Cloudflare Pages straight
 
 In `server/`:
 
-- `npm start`: run the server.
-- `node src/cli.js reset-password`: forget the password, sign everyone out and print a new setup code.
-- `npm test`: unit and HTTP tests. See [Tests](#tests) for the SSH tests.
+| Command | What it does |
+|---|---|
+| `npm start` | Runs the server. |
+| `node src/cli.js reset-password` | Forgets the password, signs everyone out and prints a new setup code. |
+| `npm test` | Runs the unit and HTTP tests. See [Tests](#tests) for the SSH tests. |
 
 To develop without a VPN server, run the backend against the mock helper:
 
@@ -73,7 +99,9 @@ sudo python3 host/wgmanager-host doctor
 sudo python3 host/wgmanager-host uninstall
 ```
 
-Only ever pass the app's public key.
+::: warning Pass only the public key
+Give `install` the app's public key only, never a private key.
+:::
 
 ## Building the image
 

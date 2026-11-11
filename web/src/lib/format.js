@@ -128,7 +128,7 @@ export function errorText(err) {
     case 'not_found': return 'That client no longer exists on the host.';
     case 'exists': return 'A client with that name already exists.';
     case 'invalid_request': return 'The host refused the request. The name or client is not one wgmanager can manage.';
-    case 'host_misconfigured': return 'The host setup has a problem. Run wgmanager-host doctor on the server for details.';
+    case 'host_misconfigured': return `The host setup has a problem. On the server, run: sudo python3 ${TOOL_DIR}/wgmanager-host doctor`;
     case 'unreachable': return 'Cannot reach the server over SSH. Check that it is running and that SSH_HOST and SSH_PORT are right.';
     case 'key_refused': return "The server answered but refused this app's key. Run the install command on the server (step 1).";
     case 'bad_response': return 'The helper on the server sent an answer wgmanager does not understand. Check that the helper is installed and up to date.';

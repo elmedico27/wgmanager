@@ -4,11 +4,11 @@ title: Troubleshooting
 
 # Troubleshooting
 
-Start with [the doctor](#doctor): it finds most server-side problems and prints the command that fixes each one.
+Start with [the doctor](#doctor). It finds most server-side problems and prints the command that fixes each one.
 
 ## Run the doctor {#doctor}
 
-`doctor` is a read-only check of everything the helper needs. It changes nothing.
+`doctor` is a read-only check of everything the helper needs. It changes nothing. Run it on the server:
 
 ```sh
 sudo python3 /usr/local/lib/wgmanager/wgmanager-host doctor
@@ -16,7 +16,9 @@ sudo python3 /usr/local/lib/wgmanager/wgmanager-host doctor
 
 ## "Nothing answered on SSH" {#nothing-answered}
 
-WG Manager couldn't reach your server's SSH service. Check, in order:
+**Cause:** WG Manager couldn't reach your server's SSH service.
+
+**Fix:** check, in order:
 
 1. The server is on and `sshd` is running.
 2. `SSH_HOST` and `SSH_PORT` in `.env` are right. After a change, run `docker compose up -d` in the app's folder.
@@ -27,23 +29,75 @@ Then click **Test connection** again.
 
 ## "The server answered but does not accept this app's key yet" {#key-not-accepted}
 
-The helper isn't installed yet, or was installed with a different key. Run the install command from the screen (see [Step 5](./getting-started#install-helper)), then test again.
+**Cause:** the helper isn't installed yet, or was installed with a different key.
+
+**Fix:** run the install command from the screen (see [Step 5](./getting-started#install-helper)). If a different key is already installed, add `--replace-key`. Then test again.
 
 ## The fingerprints don't match {#fingerprints-dont-match}
 
-Don't continue. The server answering at `SSH_HOST` and `SSH_PORT` isn't presenting the fingerprint you expect.
+::: danger Don't continue
+The server answering at `SSH_HOST` and `SSH_PORT` isn't presenting the fingerprint you expect.
+:::
 
-1. Check that `SSH_HOST` and `SSH_PORT` in `.env` point at your WireGuard server, and fix them if not. Then run `docker compose up -d` and click **Check again**.
+**Fix:**
+
+1. Check that `SSH_HOST` and `SSH_PORT` in `.env` point at your WireGuard server, and correct them if not. Then run `docker compose up -d` and click **Check again**.
 2. If they are right and the fingerprints still differ, something else may be answering in your server's place. Find out what before going on.
 
-The same applies if WG Manager later says **The server's identity changed** (on the **Host** page). It sends nothing to the server until you decide. If you know why (you reinstalled the server or replaced its SSH keys), go to **Settings › Server identity › Confirm a new server identity…** and confirm the new fingerprint. If you don't know why, investigate first.
+## "The server's identity changed" {#identity-changed}
+
+**Cause:** the **Host** page shows this when the server presents a different fingerprint than the one you confirmed. WG Manager sends nothing to the server until you decide.
+
+**Fix:**
+
+- **If you know why** (you reinstalled the server or replaced its SSH keys): go to **Settings › Server identity › Confirm a new server identity…** and confirm the new fingerprint.
+- **If you don't know why:** investigate first.
+
+## The WireGuard interface is down {#interface-down}
+
+**Cause:** WG Manager shows a banner saying no client can connect, and switches off **Add client** and **Enable**.
+
+**Fix:** run the command the banner shows, on the server. With the usual interface name, `wg0`, it is:
+
+```sh
+sudo systemctl start wg-quick@wg0
+```
+
+## A change failed {#change-failed}
+
+**Cause:** a change failed or only partly happened. WG Manager shows a warning on every page until you acknowledge it. It does not undo changes automatically.
+
+**Fix:** the helper backs up the server's config before every change. [Recovering from a failed change](./recovery) explains how to check what happened and restore from the backup.
+
+## Every change is refused with "host is misconfigured" {#host-misconfigured}
+
+The client list still loads, but every add, remove, enable and disable is refused. Nothing was changed: the helper refused before touching anything.
+
+**Cause:** usually the lock file or backup folder has been moved (with `LOCK_FILE` or `BACKUP_DIR` in `/etc/wgmanager/config`) into a folder that others can write to.
+
+**Fix:** [run the doctor](#doctor). It names the path and the fix.
+
+## I forgot the admin password {#forgot-password}
+
+**Fix:** run this on the server:
+
+```sh
+docker exec wgmanager wgmanager reset-password
+```
+
+It removes the password, signs everyone out, and prints a new **setup code** in your terminal. Open the web page, enter the code and choose a new password.
 
 ## The app's network clashes with another network {#network-clash}
 
-The app runs on its own small Docker network, `172.29.88.0/29` (addresses `172.29.88.0` to `172.29.88.7`), a range that is rarely used. If it overlaps with a network you already have, `docker compose up -d` fails with an error saying the address pool overlaps (Docker's wording is "Pool overlaps with other one on this address space"). It also must not overlap the range your VPN clients use.
-<!-- unverified: Docker's error wording above has not been seen on a real host. The `docker network inspect` command below was run on a real server (2026-10-25) and prints one `name: range` line per network. -->
+**Cause:** the app runs on its own small Docker network, `172.29.88.0/29` (addresses `172.29.88.0` to `172.29.88.7`). If it overlaps with a network you already have, `docker compose up -d` fails with an error that ends like this:
 
-To check and fix it:
+```
+failed to create network <name>: Error response from daemon: invalid pool request: Pool overlaps with other one on this address space
+```
+
+The app's network also must not overlap the range your VPN clients use.
+
+**Fix:**
 
 1. **List your Docker networks and their ranges:**
 
@@ -65,28 +119,4 @@ To check and fix it:
    ```
 
    This list *replaces* the default, so keep `127.0.0.1,::1` in it. Reinstalling the same key with a different `--allow-from` doesn't need `--replace-key`.
-8. Make sure the firewall rule and `sshd`'s `ListenAddress` (see ["Nothing answered on SSH"](#nothing-answered)) use the new gateway and range.
-
-## The WireGuard interface is down {#interface-down}
-
-WG Manager shows a banner saying no client can connect, and switches off **Add client** and **Enable**. The banner shows the exact command to start the interface on the server. With the usual interface name, `wg0`, it is:
-
-```sh
-sudo systemctl start wg-quick@wg0
-```
-
-## A change failed {#change-failed}
-
-Before every change, the helper backs up the server's config. If a change fails or only partly happens, WG Manager shows a warning on every page until you acknowledge it. It does not undo changes automatically. [Recovering from a failed change](./recovery) explains how to check what happened and restore from the backup.
-
-If every add, remove, enable and disable is refused with "host is misconfigured" while the client list still loads, nothing was changed: the helper refused before touching anything. Usually the lock file or backup folder has been moved (with `LOCK_FILE` or `BACKUP_DIR` in `/etc/wgmanager/config`) into a folder that others can write to. [Run the doctor](#doctor); it names the path and the fix.
-
-## I forgot the admin password {#forgot-password}
-
-Run this on the server:
-
-```sh
-docker exec wgmanager wgmanager reset-password
-```
-
-It removes the password, signs everyone out, and prints a new **setup code** right in your terminal. Open the web page, enter the code and choose a new password.
+8. **Check the firewall and `sshd`.** The firewall rule and `sshd`'s `ListenAddress` (see ["Nothing answered on SSH"](#nothing-answered)) must use the new gateway and range.
