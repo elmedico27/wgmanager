@@ -11,6 +11,10 @@ the helper too.
 
 ## [Unreleased]
 
+No unreleased changes at this time.
+
+## [0.3.1] - 2026-11-13
+
 ### Changed
 
 - **Documentation:** the README and every page of the documentation site were
@@ -18,6 +22,9 @@ the helper too.
   downloaded in one step, and Troubleshooting and Recovery entries list a cause
   and a fix. The Helper protocol page was checked against the helper and
   corrected in several places.
+- Bump svelte from 5.57.2 to 5.57.3 in /web by @dependabot[bot] in #11
+- Bump vitepress from 2.0.0-alpha.20 to 2.0.0-alpha.21 in /docs by
+  @dependabot[bot] in #12
 
 ## [0.3.0] - 2026-11-08
 
