@@ -2,9 +2,11 @@
   import { copyText, COPY_FAILED } from '../lib/clipboard.js';
   import Icon from '../components/Icon.svelte';
   import { app, connect, PROTOCOL, notify } from '../lib/store.svelte.js';
-  import { errorText } from '../lib/format.js';
+  import { errorText, REPO_URL } from '../lib/format.js';
 
   let v = $derived(app.version);
+  let appVersion = $derived(app.settings?.appVersion);
+  let update = $derived(app.settings?.update);
   let iface = $derived(app.list?.interface);
   let ssh = $derived(app.settings?.ssh);
   let checking = $state(false);
@@ -80,18 +82,32 @@
 
   <section class="flex flex-col gap-4 rounded-xl border border-line bg-surface p-5 shadow-card">
     <div class="flex items-center justify-between">
-      <h2 class="font-semibold">Helper</h2>
+      <h2 class="font-semibold">Software</h2>
       {#if v}
         <span class="flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium {protoOk ? 'bg-live-soft text-live' : 'bg-off-soft text-off'}">
           {protoOk ? 'Compatible' : 'Not compatible'}
         </span>
       {/if}
     </div>
-    {#if v}
+    {#if v || appVersion}
       <dl class="flex flex-col divide-y divide-line text-sm">
-        <div class="flex justify-between gap-4 py-2"><dt class="text-ink-2">Version</dt><dd class="font-mono">{v.helper_version}</dd></div>
-        <div class="flex justify-between gap-4 py-2"><dt class="text-ink-2">Protocol</dt><dd class="font-mono">{v.protocol} <span class="font-sans text-ink-3">(app expects {PROTOCOL})</span></dd></div>
-        <div class="flex justify-between gap-4 py-2"><dt class="text-ink-2">Backend</dt><dd>{v.backend === 'pivpn' ? 'PiVPN' : v.backend}</dd></div>
+        {#if appVersion}
+          <div class="flex justify-between gap-4 py-2"><dt class="text-ink-2">App version</dt><dd class="font-mono">{appVersion}</dd></div>
+          {#if update}
+            <div class="flex justify-between gap-4 py-2">
+              <dt class="text-ink-2">Update available</dt>
+              <dd>
+                <span class="font-mono">{update.latest}</span>
+                <a class="ml-1 text-accent underline underline-offset-2 hover:no-underline" href="{REPO_URL}/releases/tag/v{encodeURIComponent(update.latest)}" target="_blank" rel="noopener noreferrer">Release notes</a>
+              </dd>
+            </div>
+          {/if}
+        {/if}
+        {#if v}
+          <div class="flex justify-between gap-4 py-2"><dt class="text-ink-2">Helper version</dt><dd class="font-mono">{v.helper_version}</dd></div>
+          <div class="flex justify-between gap-4 py-2"><dt class="text-ink-2">Protocol</dt><dd class="font-mono">{v.protocol} <span class="font-sans text-ink-3">(app expects {PROTOCOL})</span></dd></div>
+          <div class="flex justify-between gap-4 py-2"><dt class="text-ink-2">Backend</dt><dd>{v.backend === 'pivpn' ? 'PiVPN' : v.backend}</dd></div>
+        {/if}
         {#if ssh}
           <div class="flex justify-between gap-4 py-2"><dt class="text-ink-2">Reached at</dt><dd class="font-mono text-[13px]">{ssh.user}@{ssh.host}:{ssh.port}</dd></div>
         {/if}

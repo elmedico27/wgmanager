@@ -22,6 +22,15 @@ function host(name, value, fallback) {
   return v;
 }
 
+// "1"/"true" and "0"/"false", any capitals. Empty or unset means the default.
+function bool(name, value, fallback) {
+  if (value === undefined || value === '') return fallback;
+  const v = value.trim().toLowerCase();
+  if (v === '1' || v === 'true') return true;
+  if (v === '0' || v === 'false') return false;
+  throw new Error(`${name} must be 1, 0, true or false`);
+}
+
 export function loadConfig(env = process.env) {
   const cfg = {
     // Inside the container the app always listens on this port; WEB_PORT and
@@ -45,6 +54,8 @@ export function loadConfig(env = process.env) {
     // Empty turns connection reuse off.
     controlDir: env.SSH_CONTROL_DIR === undefined ? '/tmp/wgm-ssh' : env.SSH_CONTROL_DIR || null,
     trustProxy: env.TRUST_PROXY === '1' || env.TRUST_PROXY === 'true',
+    // Ask GitHub for the latest release at start and every 12 hours (updates.js).
+    updateCheck: bool('UPDATE_CHECK', env.UPDATE_CHECK, true),
     timeouts: { readMs: 20000, mutationMs: 60000, connectSec: 10 },
     session: { idleMs: 6 * 3600 * 1000, absoluteMs: 7 * 24 * 3600 * 1000 },
   };

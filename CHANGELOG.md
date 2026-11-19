@@ -11,7 +11,32 @@ the helper too.
 
 ## [Unreleased]
 
-No unreleased changes at this time.
+## [0.3.2] - 2026-11-18
+
+### Added
+
+- **Update check:** WG Manager asks GitHub for the latest release when it
+  starts and every 12 hours. When a newer one exists, the **Host** page shows an
+  **Update available** line with a link to the release notes, and the **Host**
+  button in the sidebar shows a dot until you have opened that page. The request
+  carries only the app's version number. Set `UPDATE_CHECK=0` (or `false`) in
+  `.env` to turn it off; the app then makes no outbound connections. Only release
+  images check; `edge` and locally built images never do.
+- **App version:** the Host page shows the app's own version. The image now
+  takes it from the git tag it was built from (`edge-` and the commit for
+  `edge`, `dev` for a local build), so there is nothing to keep in step by hand
+  at release time.
+
+### Changed
+
+- **Host page:** the Helper card is now **Software**, with the app's version and
+  the helper's version on separate lines.
+- **Clients page:** removed the Refresh button. The list already updates every
+  15 seconds and when you return to the tab, and the error banner keeps its
+  **Check now** and **Try again** buttons. The Recovery guide now says to wait
+  for the list to update instead of clicking refresh.
+- **Sidebar:** removed the theme button. The same choice is under **Settings**
+  (Appearance). **Sign out** stays at the bottom.
 
 ## [0.3.1] - 2026-11-13
 
@@ -302,7 +327,9 @@ Verified from source, not run:
   one line per entry, and sshd matches each entry on its own with `*` and `?`
   wildcards only (OpenSSH 10.0p2).
 
-[Unreleased]: https://github.com/elmedico27/wgmanager/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/elmedico27/wgmanager/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/elmedico27/wgmanager/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/elmedico27/wgmanager/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/elmedico27/wgmanager/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/elmedico27/wgmanager/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/elmedico27/wgmanager/compare/v0.1.3...v0.2.0

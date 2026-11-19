@@ -57,7 +57,6 @@
     return c;
   });
   let refreshing = $state(false);
-  let sinceRefresh = $derived(app.lastRefresh ? Math.max(0, Math.round(app.now - app.lastRefresh / 1000)) : null);
 
   async function manualRefresh() {
     refreshing = true;
@@ -103,14 +102,6 @@
   </div>
 
   <div class="flex items-center gap-2">
-    <button
-      class="btn btn-ghost px-2.5 text-ink-2"
-      onclick={manualRefresh}
-      title={sinceRefresh !== null ? `Refreshed ${sinceRefresh} s ago. Refreshes every 15 s.` : 'Refresh'}
-      aria-label="Refresh"
-    >
-      <Icon name="refresh" size={16} class={refreshing ? 'animate-spin' : ''} />
-    </button>
     {#if list && showSearch}
       <button
         bind:this={searchButton}

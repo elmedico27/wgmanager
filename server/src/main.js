@@ -7,8 +7,9 @@ import { loadConfig } from './config.js';
 import { Store } from './store.js';
 import { SshTransport, MockTransport } from './transport.js';
 import { createApp } from './app.js';
-import { readHelperVersion, BUNDLED_HELPER_PATH } from './bundled.js';
+import { readHelperVersion, readAppVersion, BUNDLED_HELPER_PATH } from './bundled.js';
 import { loadUi } from './http.js';
+import { createUpdateChecker, isRelease } from './updates.js';
 
 let cfg;
 try {
@@ -48,12 +49,25 @@ if (!ui.size) console.log(`wgmanager: no built UI found in ${cfg.uiDir}; only /a
 const bundledHelper = readHelperVersion();
 if (!bundledHelper) console.log(`wgmanager: no helper version found in ${BUNDLED_HELPER_PATH}; the helper update check is off`);
 
-const app = createApp({ cfg, store, transport, ui, bundledHelper });
+const appVersion = readAppVersion();
+if (!appVersion) console.log('wgmanager: no VERSION file found; the Host page will not show the app version');
+
+// The app's only outbound call. Off with UPDATE_CHECK=0, and skipped unless this
+// is a release build: an edge or dev build has no release number to compare.
+const updates = cfg.updateCheck && isRelease(appVersion) ? createUpdateChecker({ currentVersion: appVersion, log: console.log }) : null;
+console.log(
+  updates
+    ? 'wgmanager: update check on: asks GitHub for the latest release at start and every 12 hours (UPDATE_CHECK=0 turns it off)'
+    : `wgmanager: update check off (${cfg.updateCheck ? 'not a release build' : 'UPDATE_CHECK'})`,
+);
+
+const app = createApp({ cfg, store, transport, ui, bundledHelper, appVersion, updates });
 app.admin.announceSetupCode();
 
 const server = http.createServer(app.handle);
 server.headersTimeout = 20000;
 server.requestTimeout = 90000; // longer than the 60 s helper timeout
+updates?.start();
 server.listen(cfg.listenPort, cfg.listenHost, () => {
   console.log(`wgmanager: listening on ${cfg.listenHost}:${cfg.listenPort}; helper via ${cfg.helperMode === 'mock' ? 'mock' : `ssh ${cfg.ssh.user}@${cfg.ssh.host}:${cfg.ssh.port}`}`);
 });

@@ -11,15 +11,6 @@
     { id: 'settings', label: 'Settings', icon: 'settings' },
   ];
 
-  const themeOrder = ['system', 'light', 'dark'];
-  const themeIcon = { system: 'auto', light: 'sun', dark: 'moon' };
-  const themeLabel = { system: 'Theme: follows system', light: 'Theme: light', dark: 'Theme: dark' };
-
-  function cycleTheme() {
-    app.theme = themeOrder[(themeOrder.indexOf(app.theme) + 1) % 3];
-    savePrefs();
-  }
-
   function go(id) {
     // On `/` the page is already Clients, so the address would otherwise stay `/`.
     if (USE_ADDRESS && id === 'clients' && location.pathname === '/') pushRoute('/clients');
@@ -30,6 +21,17 @@
   let iface = $derived(app.list?.interface);
   let count = $derived(app.list?.clients.length ?? null);
   let hostAttention = $derived(!!app.hostError || (iface && !iface.up));
+
+  // A newer release exists (settings.update). The dot shows until the Host page
+  // has been opened once for that release; the Software card keeps the notice.
+  let update = $derived(app.settings?.update);
+  let updateDot = $derived(!!update && app.updateSeen !== update.latest && app.view !== 'host');
+  $effect(() => {
+    if (app.view === 'host' && update && app.updateSeen !== update.latest) {
+      app.updateSeen = update.latest;
+      savePrefs();
+    }
+  });
 </script>
 
 <!-- Desktop rail -->
@@ -65,6 +67,9 @@
         {/if}
         {#if item.id === 'host' && hostAttention}
           <span class="size-2 rounded-full bg-warn" title="Needs attention"></span>
+        {:else if item.id === 'host' && updateDot}
+          <!-- The light theme's accent is too dark on the dark rail, so this uses the dark theme's (6.4:1 to 7.2:1 on the rail, computed). -->
+          <span class="size-2 rounded-full bg-[#8796ff]" role="img" aria-label="Update available" title="Update available"></span>
         {/if}
       </button>
     {/each}
@@ -91,14 +96,6 @@
     {/if}
     <button
       class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-rail-ink-2 hover:bg-rail-active/60 hover:text-white"
-      onclick={cycleTheme}
-      title="Switch theme"
-    >
-      <Icon name={themeIcon[app.theme]} />
-      {themeLabel[app.theme]}
-    </button>
-    <button
-      class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-rail-ink-2 hover:bg-rail-active/60 hover:text-white"
       onclick={logout}
     >
       <Icon name="logout" />
@@ -123,6 +120,8 @@
       {item.label}
       {#if item.id === 'host' && hostAttention}
         <span class="absolute top-2 right-[calc(50%-16px)] size-2 rounded-full bg-warn"></span>
+      {:else if item.id === 'host' && updateDot}
+        <span class="absolute top-2 right-[calc(50%-16px)] size-2 rounded-full bg-[#8796ff]" role="img" aria-label="Update available"></span>
       {/if}
     </button>
   {/each}

@@ -7,14 +7,14 @@ outline: deep
 
 What each page does and how to use it.
 
-The sidebar (a bar along the bottom on phones) has three pages: **Clients**, **Host** and **Settings**. At its bottom are a theme button (follow your device, light or dark) and **Sign out**.
+The sidebar (a bar along the bottom on phones) has three pages: **Clients**, **Host** and **Settings**. At its bottom is **Sign out**. The theme (follow your device, light or dark) is under **Settings**.
 
 ## Clients
 
 ![The Clients page in card view (sample data)](/screenshot-light.png){.screenshot .only-light}
 ![The Clients page in card view (sample data)](/screenshot-dark.png){.screenshot .only-dark}
 
-Lists your VPN clients as cards or as a list. Switch between them with the buttons at the top. The page refreshes every 15 seconds while the tab is visible.
+Lists your VPN clients as cards or as a list. Switch between them with the buttons at the top. The page refreshes every 15 seconds while the tab is visible, and again when you return to the tab.
 
 ### Add a client
 
@@ -53,7 +53,7 @@ Good to know:
 
 ### Search clients
 
-1. Click the magnifying glass next to the refresh button and type.
+1. Click the magnifying glass at the top of the page and type.
 2. The list shows only clients whose name, address or note contains your text (capitals don't matter).
 
 Good to know:
@@ -98,7 +98,7 @@ You can still open a greyed-out client. The panel shows its details and its note
 Shows the state of the server side:
 
 - **The WireGuard interface:** name, port, public key and number of clients.
-- **The helper:** version, protocol, backend and the address it was reached at.
+- **The software:** the app's version (a release number such as `0.3.1`, `edge-` and a commit for an `edge` image, or `dev` for one you built yourself) and the helper's version, plus the protocol, the backend and the address the helper was reached at. When a newer release exists, an **Update available** line links to its release notes, and the **Host** button in the sidebar shows a blue dot until you've opened this page. Turn the check off with [`UPDATE_CHECK`](./configuration#settings).
 - **The PiVPN scripts it runs:** each with its SHA-256 hash.
 - **Warnings from the server.**
 

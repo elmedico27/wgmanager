@@ -32,6 +32,7 @@
         { key: 'hostKeyChanged', label: 'Server identity changed', reconnect: true, app: true },
         { key: 'serverOffline', label: 'Server offline', reconnect: true, app: true },
         { key: 'sessionExpired', label: 'Session expires', app: true },
+        { key: 'updateAvailable', label: 'Update available', reconnect: true, app: true },
       ],
     },
     {

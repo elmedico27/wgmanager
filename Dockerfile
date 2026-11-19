@@ -53,6 +53,12 @@ COPY --from=web /src/web/dist web/dist
 COPY host/wgmanager-host host/wgmanager-helper host/README.md host/
 COPY host/etc host/etc
 COPY docker/wgmanager /usr/local/bin/wgmanager
+# What version this image is. CI passes the git tag without its "v" (0.3.1) for a
+# release, or edge-<7-character commit> for master (.github/workflows/build.yml);
+# a plain `docker build` says "dev". The app reads it from this file, so nothing
+# in the repository has to be kept in step with a release.
+ARG APP_VERSION=dev
+RUN printf '%s\n' "$APP_VERSION" > /opt/wgmanager/VERSION
 
 # Root owns the program (read-only for the app); only /data belongs to the app.
 RUN chown -R root:root /opt/wgmanager \

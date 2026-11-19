@@ -20,6 +20,7 @@ services:
       SSH_PORT: ${SSH_PORT:-22}
       SSH_USER: ${SSH_USER:-wgweb}
       TRUST_PROXY: ${TRUST_PROXY:-0}       # 1 only behind an HTTPS reverse proxy
+      UPDATE_CHECK: ${UPDATE_CHECK:-1}     # 1/true: ask GitHub for new releases (start, then every 12 h); 0/false: never
     ports:
       - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-7501}:7501"
     volumes:

@@ -28,7 +28,6 @@ export const app = $state({
   listError: null, // error from the last list call
   hostError: null, // problem reaching or trusting the host; blocks changes
   hostKey: null, // {pinned, offered} while the server identity needs confirming
-  lastRefresh: 0,
   now: Date.now() / 1000,
   selected: null, // client name in the detail panel
   adding: false,
@@ -47,6 +46,7 @@ export const app = $state({
   notFound: false, // the address isn't a page of the app (lib/routes.js)
   sort: { ...DEFAULT_SORT }, // shared by list and cards; see lib/sort.js
   theme: 'system', // system | light | dark
+  updateSeen: '', // newest release number whose Host-page notice was seen (localStorage)
 });
 
 // The page comes from the address, so links, bookmarks and refreshes land where they point.
@@ -61,11 +61,12 @@ try {
   if (saved.layout === 'list' || saved.layout === 'cards') app.layout = saved.layout;
   if (['system', 'light', 'dark'].includes(saved.theme)) app.theme = saved.theme;
   if (validSort(saved.sort)) app.sort = { key: saved.sort.key, dir: saved.sort.dir };
+  if (typeof saved.updateSeen === 'string' && /^[0-9.]{0,20}$/.test(saved.updateSeen)) app.updateSeen = saved.updateSeen;
 } catch {}
 
 export function savePrefs() {
   try {
-    localStorage.setItem('wgm-ui', JSON.stringify({ layout: app.layout, theme: app.theme, sort: app.sort }));
+    localStorage.setItem('wgm-ui', JSON.stringify({ layout: app.layout, theme: app.theme, sort: app.sort, updateSeen: app.updateSeen }));
   } catch {}
 }
 
@@ -79,7 +80,7 @@ function resetSessionState() {
   stopPolling();
   Object.assign(app, {
     view: 'clients', list: null, version: null, settings: null, listError: null, hostError: null,
-    hostKey: null, lastRefresh: 0, selected: null, adding: false, pending: {}, failures: [],
+    hostKey: null, selected: null, adding: false, pending: {}, failures: [],
     notes: {}, notesUnreadable: false, notesFailed: false, noteDraft: null, noteDirty: false, discard: null, search: '',
   });
   // Signing in again returns to the page in the address bar.
@@ -112,7 +113,10 @@ export async function boot() {
 export async function connect({ background = false } = {}) {
   const mine = epoch;
   const st = await api.settings({ background });
-  if (st.ok) app.settings = st.data;
+  if (st.ok) {
+    app.settings = st.data;
+    settingsAt = Date.now();
+  }
   const v = await api.version({ background });
   if (mine !== epoch) return v; // signed out meanwhile
   if (!v.ok) {
@@ -167,7 +171,6 @@ export async function refresh({ background = false } = {}) {
   }
   app.listError = null;
   app.list = r.data;
-  app.lastRefresh = Date.now();
 }
 
 async function loadFailures(background) {
@@ -222,13 +225,28 @@ export function leavePanel(step) {
 let timer = null;
 let clock = null;
 let busy = false;
+// The settings answer carries the update notice, which can appear while the page
+// is open (a new release, or the first check finishing after start). It is a
+// local call, so refetch it now and then, not on every 15 s poll.
+let settingsAt = 0;
+const SETTINGS_REFRESH_MS = 5 * 60 * 1000;
+async function refreshSettings() {
+  const mine = epoch;
+  const st = await api.settings({ background: true });
+  if (mine !== epoch || !st.ok) return;
+  app.settings = st.data;
+  settingsAt = Date.now();
+}
 async function tick() {
   if (busy || document.visibilityState !== 'visible' || app.phase !== 'ready') return;
   busy = true;
   try {
     // While the host has a problem, keep trying to reconnect instead.
     if (app.hostError) await connect({ background: true });
-    else await refresh({ background: true });
+    else {
+      await refresh({ background: true });
+      if (Date.now() - settingsAt > SETTINGS_REFRESH_MS) await refreshSettings();
+    }
   } finally {
     busy = false;
   }

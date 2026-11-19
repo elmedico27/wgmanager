@@ -22,7 +22,7 @@ systemctl status wg-quick@wg0                          # is the interface up?
 sudo python3 /usr/local/lib/wgmanager/wgmanager-host doctor
 ```
 
-Then click refresh in WG Manager. If the client now looks the way you wanted, click **I've checked this**. You're done.
+Then wait up to 15 seconds for WG Manager to update its list. If the client now looks the way you wanted, click **I've checked this**. You're done.
 
 ## 2. Find your situation {#find-your-situation}
 
@@ -99,7 +99,7 @@ pivpn on <NAME>     # or: pivpn off <NAME>
 
 **Cause:** WG Manager can't tell whether the change happened.
 
-**Fix:** refresh. The list shows what is really on the server. Do the change again only if it didn't happen.
+**Fix:** look at the list, which updates by itself every 15 seconds. It shows what is really on the server. Do the change again only if it didn't happen.
 
 ## 3. Restore a backup {#restoring-a-backup}
 
@@ -139,7 +139,7 @@ Before every change, the helper saves the server config and PiVPN's client list.
    sudo systemctl reload wg-quick@wg0
    ```
 
-4. **Refresh WG Manager** and click **I've checked this**.
+4. **Wait up to 15 seconds** for WG Manager to update its list, then click **I've checked this**.
 
 ## 4. What a backup does not cover {#not-covered}
 

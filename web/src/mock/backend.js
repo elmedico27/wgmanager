@@ -19,6 +19,7 @@ export const appScenarios = {
   hostKeyChanged: false,  // the server now presents a different host key than the pinned one
   serverOffline: false,   // SSH to the host fails (server down, rebooting)
   sessionExpired: false,  // next request finds the session gone
+  updateAvailable: false, // a newer release exists (settings.update)
 };
 
 // Unacknowledged failure warnings, as the backend keeps them in failures.json.
@@ -56,6 +57,7 @@ const settings = {
   // The helper this image would ship; the mock helper reports an older one when
   // the "Helper out of date" preview switch is on.
   bundledHelper: HELPER_VERSION,
+  appVersion: 'demo', // a real image states its git tag (server/src/bundled.js)
 };
 
 const appError = (code, message) => ({ ok: false, error: { code, message } });
@@ -143,7 +145,10 @@ async function route(method, path, body) {
   if (appScenarios.sessionExpired) authenticated = false;
   if (!authenticated) return appError('unauthenticated', 'sign in first');
 
-  if (path === '/api/settings') return { ok: true, data: settings };
+  if (path === '/api/settings') {
+    // The preview switch shows a made-up newer release.
+    return { ok: true, data: { ...settings, update: appScenarios.updateAvailable ? { latest: '9.9.9' } : null } };
+  }
   if (path === '/api/hostkey') {
     const offered = appScenarios.hostKeyChanged ? OTHER_FP : OFFERED_FP;
     if (method === 'GET') {

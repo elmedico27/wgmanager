@@ -9,7 +9,9 @@ import { Store } from '../src/store.js';
 import { MockTransport } from '../src/transport.js';
 import { createApp } from '../src/app.js';
 import { loadUi } from '../src/http.js';
-import { readHelperVersion } from '../src/bundled.js';
+import { readHelperVersion, readAppVersion } from '../src/bundled.js';
+
+let updateNotice = null; // what the stub update checker reports (settings.update)
 import { Admin, passwordProblem } from '../src/auth.js';
 
 const mock = await import('../../web/src/mock/helper.js');
@@ -30,7 +32,7 @@ async function start({ transport, clock } = {}) {
   const logs = [];
   const t = { now: Date.parse('2026-10-22T12:00:00Z') };
   const tr = transport ?? new MockTransport(cfg, mock, { delayMs: 0 });
-  const app = createApp({ cfg, store, transport: tr, ui: loadUi(uiDir), log: (l) => logs.push(l), now: clock ?? (() => t.now), bundledHelper: '0.1.4' });
+  const app = createApp({ cfg, store, transport: tr, ui: loadUi(uiDir), log: (l) => logs.push(l), now: clock ?? (() => t.now), bundledHelper: '0.1.4', appVersion: '0.3.0', updates: { get: () => updateNotice } });
   app.admin.announceSetupCode();
   const server = http.createServer(app.handle);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -412,6 +414,12 @@ test('settings show the SSH target and the public key', async () => {
   assert.match(r.json.data.publicKey, /^ssh-ed25519 /);
   assert.deepEqual(r.json.data.allowFrom, ['127.0.0.1', '::1', '172.29.88.0/29']);
   assert.equal(r.json.data.bundledHelper, '0.1.4');
+  assert.equal(r.json.data.appVersion, '0.3.0');
+  assert.equal(r.json.data.update, null);
+  updateNotice = { latest: '0.3.1' };
+  const r2 = await cl.req('GET', '/api/settings');
+  assert.deepEqual(r2.json.data.update, { latest: '0.3.1' });
+  updateNotice = null;
 });
 
 test('bundled helper version is read from the helper file', () => {
@@ -424,6 +432,29 @@ test('bundled helper version is read from the helper file', () => {
   fs.writeFileSync(f, 'HELPER_VERSION = "1.2.3; rm -rf"\n');
   assert.equal(readHelperVersion(f), null);
   assert.equal(readHelperVersion(path.join(dir, 'missing')), null);
+});
+
+test('app version is read from the VERSION file the image carries', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wgm-appver-'));
+  const f = path.join(dir, 'VERSION');
+  for (const [text, want] of [
+    ['0.3.1\n', '0.3.1'],
+    ['  10.20.30  \n', '10.20.30'],
+    ['edge-f2be361\n', 'edge-f2be361'],
+    ['dev\n', 'dev'],
+    ['', null],
+    ['\n', null],
+    ['v0.3.1\n', null], // the workflow strips the "v"; anything else is refused
+    ['0.3.1-rc1\n', null],
+    ['edge-F2BE361\n', null],
+    ['edge-f2be36\n', null],
+    ['0.3.1\n0.3.2\n', null],
+    ['0.3.1; rm -rf /\n', null],
+  ]) {
+    fs.writeFileSync(f, text);
+    assert.equal(readAppVersion(f), want, JSON.stringify(text));
+  }
+  assert.equal(readAppVersion(path.join(dir, 'missing')), null);
 });
 
 test('config: bad environment values are refused', () => {
