@@ -144,7 +144,13 @@ Your clients now appear. The install is finished.
 
 Update the app first, then the helper. Both steps are safe to repeat. Read the [warning](#before-you-begin) about the VPN connection first.
 
-1. **Update the app.** If you set `WGM_VERSION` in `.env` to a fixed version, change it to the new one. Then, in the folder that contains `compose.yaml`, run:
+1. **Update the app.** If you set `WGM_VERSION` in `.env` to a fixed version, change it to the new one. If the [release notes](https://github.com/elmedico27/wgmanager/blob/master/CHANGELOG.md) say `compose.yaml` changed (as in 0.3.3), download it again first; this leaves your `.env` alone, but redo any edits you made to `compose.yaml` yourself:
+
+   ```sh
+   curl -fsSLO https://raw.githubusercontent.com/elmedico27/wgmanager/master/compose.yaml
+   ```
+
+   Then, in the folder that contains `compose.yaml`, run:
 
    ```sh
    docker compose pull && docker compose up -d

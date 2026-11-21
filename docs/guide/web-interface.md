@@ -98,7 +98,7 @@ You can still open a greyed-out client. The panel shows its details and its note
 Shows the state of the server side:
 
 - **The WireGuard interface:** name, port, public key and number of clients.
-- **The software:** the app's version (a release number such as `0.3.1`, `edge-` and a commit for an `edge` image, or `dev` for one you built yourself) and the helper's version, plus the protocol, the backend and the address the helper was reached at. When a newer release exists, an **Update available** line links to its release notes, and the **Host** button in the sidebar shows a blue dot until you've opened this page. Turn the check off with [`UPDATE_CHECK`](./configuration#settings).
+- **The software:** the app's version (a release number such as `0.3.1`, `edge-` and a commit for an `edge` image, or `dev` for one you built yourself) and the helper's version, plus the protocol, the backend and the address the helper was reached at. When a newer release exists, an **Update available** line links to its release notes, and the **Host** button in the sidebar shows a blue dot until you've opened this page. The check is off until you turn it on with [`UPDATE_CHECK`](./configuration#settings).
 - **The PiVPN scripts it runs:** each with its SHA-256 hash.
 - **Warnings from the server.**
 

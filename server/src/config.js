@@ -31,6 +31,67 @@ function bool(name, value, fallback) {
   throw new Error(`${name} must be 1, 0, true or false`);
 }
 
+// A header-safe secret: visible ASCII only, no spaces, so it cannot smuggle a
+// line break or a second header into a request.
+const SECRET_RE = /^[\x21-\x7e]{1,512}$/;
+
+// Notifications to a ntfy server (see ntfy.md in the project notes). Everything is
+// off unless NTFY_ENABLE is true; while it is off the other NTFY_* settings are
+// not even read, so a half-filled .env cannot stop the app from starting.
+//
+// NTFY_URL is one full address. Its scheme is the TLS setting: https:// is used
+// with normal certificate checks, http:// is accepted as written (a ntfy on your
+// own network). There is deliberately no separate "allow http" switch.
+// Error messages never repeat a value, because a pasted URL or secret may be in it.
+function ntfy(env) {
+  const enabled = bool('NTFY_ENABLE', env.NTFY_ENABLE, false);
+  if (!enabled) return { enabled: false };
+  const get = (name) => (env[name] ?? '').trim();
+
+  const rawUrl = get('NTFY_URL');
+  if (!rawUrl) throw new Error('NTFY_URL is required when NTFY_ENABLE is true');
+  const example = 'a full address such as https://ntfy.example.com or http://192.168.0.5:2586';
+  let u;
+  try {
+    u = new URL(rawUrl);
+  } catch {
+    throw new Error(`NTFY_URL must be ${example}`);
+  }
+  if ((u.protocol !== 'https:' && u.protocol !== 'http:') || !u.hostname) throw new Error(`NTFY_URL must be ${example}`);
+  if (u.username || u.password) throw new Error('NTFY_URL must not contain a user name or password; use NTFY_TOKEN, or NTFY_USER and NTFY_PASSWORD');
+  if (u.search || u.hash) throw new Error('NTFY_URL must not contain a query (?) or a fragment (#)');
+  // Scheme, host and port, plus a path prefix if the server sits under one. No trailing slash.
+  const url = u.origin + u.pathname.replace(/\/+$/, '');
+
+  // The topic goes into the request path. Letters, digits, "_" and "-" only, up to
+  // 64 characters (unverified: ntfy's documented rule, remembered; its server is
+  // the final judge). Keeping to this means a topic can never change the path.
+  const topic = get('NTFY_TOPIC');
+  if (!topic) throw new Error('NTFY_TOPIC is required when NTFY_ENABLE is true');
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(topic)) throw new Error('NTFY_TOPIC may only contain letters, digits, "_" and "-" (up to 64 characters)');
+
+  const token = get('NTFY_TOKEN');
+  const user = get('NTFY_USER');
+  const password = env.NTFY_PASSWORD ?? '';
+  let auth = null;
+  if (token && (user || password)) throw new Error('Set NTFY_TOKEN, or NTFY_USER and NTFY_PASSWORD, not both');
+  if (token) {
+    if (!SECRET_RE.test(token)) throw new Error('NTFY_TOKEN must be one word of printable characters, with no spaces');
+    auth = { type: 'token', token };
+  } else if (user || password) {
+    if (!user || !password) throw new Error('NTFY_USER and NTFY_PASSWORD must be set together');
+    if (user.includes(':') || !SECRET_RE.test(user)) throw new Error('NTFY_USER must be printable characters with no spaces and no ":"');
+    if (!/^[\x20-\x7e]{1,512}$/.test(password)) throw new Error('NTFY_PASSWORD must be printable ASCII characters');
+    auth = { type: 'basic', user, password };
+  }
+  // Which kinds of notification are wanted. Default: all that exist.
+  const on = {
+    errors: bool('NTFY_ON_ERRORS', env.NTFY_ON_ERRORS, true),
+    updates: bool('NTFY_ON_UPDATES', env.NTFY_ON_UPDATES, true),
+  };
+  return { enabled: true, url, topic, secure: u.protocol === 'https:', auth, on };
+}
+
 export function loadConfig(env = process.env) {
   const cfg = {
     // Inside the container the app always listens on this port; WEB_PORT and
@@ -55,7 +116,10 @@ export function loadConfig(env = process.env) {
     controlDir: env.SSH_CONTROL_DIR === undefined ? '/tmp/wgm-ssh' : env.SSH_CONTROL_DIR || null,
     trustProxy: env.TRUST_PROXY === '1' || env.TRUST_PROXY === 'true',
     // Ask GitHub for the latest release at start and every 12 hours (updates.js).
-    updateCheck: bool('UPDATE_CHECK', env.UPDATE_CHECK, true),
+    // Off unless UPDATE_CHECK is 1 or true: the app makes no outbound connection
+    // (besides SSH to the server) that the user has not asked for.
+    updateCheck: bool('UPDATE_CHECK', env.UPDATE_CHECK, false),
+    ntfy: ntfy(env),
     timeouts: { readMs: 20000, mutationMs: 60000, connectSec: 10 },
     session: { idleMs: 6 * 3600 * 1000, absoluteMs: 7 * 24 * 3600 * 1000 },
   };

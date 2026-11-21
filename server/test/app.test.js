@@ -18,7 +18,7 @@ const mock = await import('../../web/src/mock/helper.js');
 
 let ctx;
 
-async function start({ transport, clock } = {}) {
+async function start({ transport, clock, notifier } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wgm-'));
   const uiDir = path.join(dir, 'ui');
   fs.mkdirSync(path.join(uiDir, 'assets'), { recursive: true });
@@ -32,7 +32,7 @@ async function start({ transport, clock } = {}) {
   const logs = [];
   const t = { now: Date.parse('2026-10-22T12:00:00Z') };
   const tr = transport ?? new MockTransport(cfg, mock, { delayMs: 0 });
-  const app = createApp({ cfg, store, transport: tr, ui: loadUi(uiDir), log: (l) => logs.push(l), now: clock ?? (() => t.now), bundledHelper: '0.1.4', appVersion: '0.3.0', updates: { get: () => updateNotice } });
+  const app = createApp({ cfg, store, transport: tr, ui: loadUi(uiDir), log: (l) => logs.push(l), now: clock ?? (() => t.now), bundledHelper: '0.1.4', appVersion: '0.3.0', updates: { get: () => updateNotice }, notifier });
   app.admin.announceSetupCode();
   const server = http.createServer(app.handle);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -499,6 +499,20 @@ test('failures: exit 5 and timeouts are kept for every browser until acknowledge
   assert.equal(r.json.ok, true);
   assert.equal((await a.req('GET', '/api/failures')).json.data.failures.length, 0);
   await a.req('POST', '/api/clients/Bob_Phone/enable');
+});
+
+test('failures: a kept failure tells the notifier once; a plain error does not', async () => {
+  const calls = [];
+  ctx.server.close();
+  ctx = await start({ notifier: { failure: async () => { calls.push('failure'); } } });
+  const cl = await signedIn();
+  mock.scenarios.busyNext = true;
+  await cl.req('POST', '/api/clients/Bob_Phone/disable');
+  assert.deepEqual(calls, []);
+  mock.scenarios.failNextMutation = true;
+  await cl.req('POST', '/api/clients/Bob_Phone/disable');
+  assert.deepEqual(calls, ['failure']);
+  await cl.req('POST', '/api/clients/Bob_Phone/enable');
 });
 
 test('failures: a plain error (busy) is not kept; ack needs the CSRF token', async () => {

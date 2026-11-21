@@ -35,7 +35,7 @@ const err = (code, message) => ({ ok: false, error: { code, message } });
 const passwordError = (code) =>
   err(code, code === 'password_too_long' ? `password is longer than ${MAX_PASSWORD_BYTES} bytes` : 'password too short');
 
-export function createApp({ cfg, store, transport, ui = new Map(), log = console.log, now = () => Date.now(), bundledHelper = null, appVersion = null, updates = null }) {
+export function createApp({ cfg, store, transport, ui = new Map(), log = console.log, now = () => Date.now(), bundledHelper = null, appVersion = null, updates = null, notifier = null }) {
   const admin = new Admin(store, log);
   const sessions = new Sessions(cfg.session, now);
   const limiter = new FailureLimiter({}, now);
@@ -165,6 +165,7 @@ export function createApp({ cfg, store, transport, ui = new Map(), log = console
     // every browser sees until someone acknowledges it.
     if (!body.ok && (body.error?.code === 'backend_failed' || body.error?.code === 'timeout')) {
       recordFailure(action, name, body.error);
+      void notifier?.failure();
     }
     reply(res, body);
   }
@@ -374,5 +375,5 @@ export function createApp({ cfg, store, transport, ui = new Map(), log = console
   }, 10 * 60 * 1000);
   timer.unref();
 
-  return { handle, admin, sessions };
+  return { handle, admin, sessions, helper };
 }

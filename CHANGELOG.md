@@ -11,6 +11,50 @@ the helper too.
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-11-21
+
+### Added
+
+- **Notifications to ntfy (off by default):** set `NTFY_ENABLE=true` with
+  `NTFY_URL`, `NTFY_TOPIC` and a token in `.env` and WG Manager sends short,
+  generic messages to your [ntfy](https://ntfy.sh) server, in two kinds:
+  - `NTFY_ON_ERRORS`: a change failed or may be incomplete (at most 5 an hour),
+    or the VPN server can't be reached or is set up wrongly. WG Manager checks
+    the server about once a minute (the same read-only requests the web UI
+    makes), tells you once per problem after two checks in a row, and again when
+    it is fixed.
+  - `NTFY_ON_UPDATES`: a newer WG Manager release exists (needs
+    `UPDATE_CHECK=1`), or the helper on your server is older than the one the
+    image ships. Once per release.
+
+  Messages never contain client names, keys or addresses. `https://` addresses
+  are checked and encrypted; `http://` is allowed for a ntfy on your own network,
+  with a warning in the log. Send a test message with
+  `docker exec wgmanager wgmanager ntfy-test`.
+
+### Changed
+
+- **Update check is now off by default.** In 0.3.2 it was on unless you set
+  `UPDATE_CHECK=0`. Now it does nothing until you set `UPDATE_CHECK=1` (or
+  `true`) in `.env`, so the app makes no outbound connections unless you opt in.
+  If you want the Host page's **Update available** line and dot, add
+  `UPDATE_CHECK=1`.
+- **Settings defaults:** `compose.yaml` no longer repeats the defaults of the
+  app's own settings (SSH, proxy, update check). It passes the values from `.env`
+  through, and anything missing, empty or commented out uses the default built
+  into the app (named in `.env.example` and the configuration reference).
+
+### Upgrading from 0.3.2
+
+- **Download the new `compose.yaml` before `docker compose pull`.** The old one
+  does not pass the `NTFY_*` settings to the container, so notifications stay
+  off, and it still turns the update check on by default. In the folder with
+  `compose.yaml`, run
+  `curl -fsSLO https://raw.githubusercontent.com/elmedico27/wgmanager/master/compose.yaml`.
+  Your `.env` is not touched. If you edited `compose.yaml` yourself (for example
+  the network's `subnet`), make the same edit again.
+- To keep the update check on, add `UPDATE_CHECK=1` to `.env`.
+
 ## [0.3.2] - 2026-11-18
 
 ### Added
@@ -327,7 +371,8 @@ Verified from source, not run:
   one line per entry, and sshd matches each entry on its own with `*` and `?`
   wildcards only (OpenSSH 10.0p2).
 
-[Unreleased]: https://github.com/elmedico27/wgmanager/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/elmedico27/wgmanager/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/elmedico27/wgmanager/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/elmedico27/wgmanager/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/elmedico27/wgmanager/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/elmedico27/wgmanager/compare/v0.2.1...v0.3.0

@@ -1,9 +1,9 @@
 // Update check: asks GitHub for the latest release of WG Manager once at start
 // and then every 12 hours, and remembers only the newer version number, if any.
-// This is the app's only outbound call. It sends no data about you or your server
-// (just a User-Agent with this app's version), keeps nothing on disk, and any
-// failure (offline, rate limited, odd answer) is ignored: the notice simply does
-// not appear. UPDATE_CHECK=0 turns it off (see config.js).
+// It is an outbound call, so it is off unless UPDATE_CHECK=1 (see config.js). It
+// sends no data about you or your server (just a User-Agent with this app's
+// version), keeps nothing on disk, and any failure (offline, rate limited, odd
+// answer) is ignored: the notice simply does not appear.
 //
 // Verified 2026-11-18 against the real endpoint: `GET /repos/elmedico27/wgmanager/
 // releases/latest` answers 200 with `tag_name` ("v0.3.1"), `draft`, `prerelease`
@@ -36,6 +36,7 @@ export function createUpdateChecker({
   intervalMs = UPDATE_INTERVAL_MS,
   timeoutMs = 10000,
   log = () => {},
+  onNewer = () => {}, // called with "x.y.z" each time a check finds a release newer than this app
 }) {
   let latest = null; // newest release number seen, "x.y.z"
   let timer = null;
@@ -62,6 +63,13 @@ export function createUpdateChecker({
       if (!m || rel.draft === true || rel.prerelease === true) throw new Error('no usable release in the answer');
       latest = `${Number(m[1])}.${Number(m[2])}.${Number(m[3])}`;
       warned = false;
+      if (isNewer(latest, currentVersion)) {
+        try {
+          Promise.resolve(onNewer(latest)).catch(() => {});
+        } catch {
+          // a failing listener must not break the check
+        }
+      }
     } catch (e) {
       if (!warned) {
         warned = true;

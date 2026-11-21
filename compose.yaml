@@ -15,12 +15,20 @@ services:
     image: ghcr.io/elmedico27/wgmanager:${WGM_VERSION:-latest}
     container_name: wgmanager    # the install command and the reset command use this name
     restart: unless-stopped
-    environment:
-      SSH_HOST: ${SSH_HOST:-172.29.88.1}   # the WireGuard server as seen from the container
-      SSH_PORT: ${SSH_PORT:-22}
-      SSH_USER: ${SSH_USER:-wgweb}
-      TRUST_PROXY: ${TRUST_PROXY:-0}       # 1 only behind an HTTPS reverse proxy
-      UPDATE_CHECK: ${UPDATE_CHECK:-1}     # 1/true: ask GitHub for new releases (start, then every 12 h); 0/false: never
+    environment:                # taken from .env; anything unset uses the app's own default
+      - SSH_HOST
+      - SSH_PORT
+      - SSH_USER
+      - TRUST_PROXY
+      - UPDATE_CHECK
+      - NTFY_ENABLE
+      - NTFY_URL
+      - NTFY_TOPIC
+      - NTFY_TOKEN
+      - NTFY_USER
+      - NTFY_PASSWORD
+      - NTFY_ON_ERRORS
+      - NTFY_ON_UPDATES
     ports:
       - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-7501}:7501"
     volumes:

@@ -131,10 +131,28 @@ test('checks do not overlap, and start/stop manage one timer', async () => {
   u.stop();
 });
 
-test('UPDATE_CHECK accepts 1, 0, true and false in any case; default is on', () => {
-  assert.equal(loadConfig({}).updateCheck, true);
-  assert.equal(loadConfig({ UPDATE_CHECK: '' }).updateCheck, true);
+test('UPDATE_CHECK accepts 1, 0, true and false in any case; default is off', () => {
+  assert.equal(loadConfig({}).updateCheck, false);
+  assert.equal(loadConfig({ UPDATE_CHECK: '' }).updateCheck, false);
   for (const v of ['1', 'true', 'TRUE', 'True', ' true ']) assert.equal(loadConfig({ UPDATE_CHECK: v }).updateCheck, true, v);
   for (const v of ['0', 'false', 'FALSE', 'False']) assert.equal(loadConfig({ UPDATE_CHECK: v }).updateCheck, false, v);
   for (const v of ['yes', 'off', '2', 'no']) assert.throws(() => loadConfig({ UPDATE_CHECK: v }), /UPDATE_CHECK must be 1, 0, true or false/, v);
+});
+
+test('onNewer is told each time a check finds a newer release, never for the same or an older one, and cannot break the check', async () => {
+  const seen = [];
+  const u = createUpdateChecker({ currentVersion: '0.3.0', fetchFn: answer(release({ tag_name: 'v0.3.1' })), onNewer: (v) => seen.push(v) });
+  await u.check();
+  await u.check();
+  assert.deepEqual(seen, ['0.3.1', '0.3.1']);
+  const same = [];
+  await createUpdateChecker({ currentVersion: '0.3.1', fetchFn: answer(release()), onNewer: (v) => same.push(v) }).check();
+  await createUpdateChecker({ currentVersion: '0.4.0', fetchFn: answer(release()), onNewer: (v) => same.push(v) }).check();
+  assert.deepEqual(same, []);
+  const bad = createUpdateChecker({ currentVersion: '0.3.0', fetchFn: answer(release()), onNewer: () => { throw new Error('x'); } });
+  await bad.check();
+  assert.deepEqual(bad.get(), { latest: '0.3.1' });
+  const rej = createUpdateChecker({ currentVersion: '0.3.0', fetchFn: answer(release()), onNewer: async () => { throw new Error('x'); } });
+  await rej.check();
+  assert.deepEqual(rej.get(), { latest: '0.3.1' });
 });
