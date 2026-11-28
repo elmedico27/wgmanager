@@ -76,7 +76,7 @@
 >
   {#if open}
     <div
-      class="flex max-h-[70dvh] w-72 flex-col gap-4 overflow-y-auto rounded-xl border border-line bg-surface p-4 text-sm shadow-lift"
+      class="flex max-h-[70dvh] w-72 flex-col gap-4 overflow-y-auto rounded-xl border border-edge bg-surface p-4 text-sm shadow-lift"
       transition:fly={{ y: 12, duration: 160 }}
     >
       <div>
@@ -104,7 +104,7 @@
     </div>
   {/if}
   <button
-    class="flex h-10 items-center gap-2 rounded-full border border-line bg-surface px-4 text-sm font-medium shadow-lift hover:bg-surface-2"
+    class="flex h-10 items-center gap-2 rounded-full border border-edge bg-surface px-4 text-sm font-medium shadow-lift hover:bg-surface-2"
     onclick={() => (open = !open)}
     aria-expanded={open}
   >

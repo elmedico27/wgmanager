@@ -7,14 +7,14 @@ outline: deep
 
 What each page does and how to use it.
 
-The sidebar (a bar along the bottom on phones) has three pages: **Clients**, **Host** and **Settings**. At its bottom is **Sign out**. The theme (follow your device, light or dark) is under **Settings**.
+The bar along the top has three pages: **Clients**, **Host** and **Settings**. On the right it shows the WireGuard interface (its name, whether it is up, and its port) and **Sign out**. On a phone the page names are hidden and only their icons show. The theme (follow your device, light or dark) is under **Settings**.
 
 ## Clients
 
 ![The Clients page in card view (sample data)](/screenshot-light.png){.screenshot .only-light}
 ![The Clients page in card view (sample data)](/screenshot-dark.png){.screenshot .only-dark}
 
-Lists your VPN clients as cards or as a list. Switch between them with the buttons at the top. The page refreshes every 15 seconds while the tab is visible, and again when you return to the tab.
+Lists your VPN clients as cards or as a list. Switch between them with the two buttons at the top right. The page refreshes every 15 seconds while the tab is visible, and again when you return to the tab.
 
 ### Add a client
 
@@ -51,20 +51,34 @@ Good to know:
 - A small note icon next to a client's name means it has a note. Point at it to read the note (on a phone, open the client).
 - Notes are stored by WG Manager, not on the server. Deleting a client deletes its note. A client re-created under the same name does not restore the previous note.
 
+### Filter by state
+
+The row under the page title counts your clients by state. Click one to show only those clients, and click **All** to show everything. **Needs a look** and **Read-only** only appear when a client is in that state.
+
+The marks are the same on cards, in the list and in the panel:
+
+| Mark | State |
+|---|---|
+| Solid green dot, pulsing | **Connected** |
+| Green ring | **Idle** |
+| Grey ring with a dash | **Disabled** |
+| Amber dot | **Needs a look** |
+| Amber padlock | **Read-only** |
+
 ### Search clients
 
-1. Click the magnifying glass at the top of the page and type.
+1. Type in the search box at the top right of the page.
 2. The list shows only clients whose name, address or note contains your text (capitals don't matter).
 
 Good to know:
 
-- A dot on the magnifying glass shows the filter is on. It stays on when you close the search box, open clients, use Back and Forward, or visit Host and Settings.
-- Reloading the page, signing out, or clicking **Clear** (if no results) clears the search.
+- The search and the state filter stay when you open clients, use Back and Forward, or visit Host and Settings.
+- Reloading the page, signing out, or clicking **Clear** (if no results) clears them.
 - A direct link to a client always opens it, even one the filter hides.
 
 ### Sort clients
 
-- **Card view:** click the arrows button next to the magnifying glass and pick a field under **Sort by**.
+- **Card view:** click the arrows button next to the search box and pick a field under **Sort by**.
 - **List view:** click a column heading.
 
 Click the same field again to reverse. Your browser remembers your choice.
@@ -73,16 +87,16 @@ Click the same field again to reverse. Your browser remembers your choice.
 
 | Item | Meaning |
 |---|---|
-| Status dot | **Green:** enabled and active on the server's WireGuard interface. **Red:** disabled. **Yellow:** something doesn't line up, for example enabled but not active. Open the client to see why; **Enable again** can fix it. |
-| Connected now | The device completed a *handshake* (the brief exchange WireGuard uses to set up a secure link) in the last 3 minutes. An idle device sends nothing, so a connected but idle device can look disconnected. |
-| Last handshake | When that exchange last happened. |
+| State mark | See [Filter by state](#filter-by-state). A client with an amber dot has something that doesn't line up, for example it is enabled but not active. Open the client to see why; **Enable again** can fix it. |
+| Connected | The device completed a *handshake* (the brief exchange WireGuard uses to set up a secure link) in the last 3 minutes. An idle device sends nothing, so a connected but idle device can look disconnected. |
+| Last seen | When that exchange last happened. Point at it to see the exact time. The bar under **Connected** fills during the 3 minutes after a handshake, and empties again when the next one happens. |
 | Last seen from | The device's public internet address at its last handshake. It is not your server's address. |
 | Downloaded / Uploaded | Data transferred, counted from the device's point of view, since the WireGuard interface last started. |
 | Address | The client's address inside the VPN. |
 
 ### Greyed-out clients
 
-A greyed-out client is shown with a reason. Either its name breaks the rules in [Add a client](#add-a-client), or its address is outside the VPN's range. Manage these clients with `pivpn` on the server.
+A greyed-out client has a padlock and is shown with a reason. Either its name breaks the rules in [Add a client](#add-a-client), or its address is outside the VPN's range. Manage these clients with `pivpn` on the server.
 
 You can still open a greyed-out client. The panel shows its details and its note (which you can edit), but no QR code or config, and its buttons are switched off.
 
@@ -98,7 +112,7 @@ You can still open a greyed-out client. The panel shows its details and its note
 Shows the state of the server side:
 
 - **The WireGuard interface:** name, port, public key and number of clients.
-- **The software:** the app's version (a release number such as `0.3.1`, `edge-` and a commit for an `edge` image, or `dev` for one you built yourself) and the helper's version, plus the protocol, the backend and the address the helper was reached at. When a newer release exists, an **Update available** line links to its release notes, and the **Host** button in the sidebar shows a blue dot until you've opened this page. The check is off until you turn it on with [`UPDATE_CHECK`](./configuration#settings).
+- **The software:** the app's version (a release number such as `0.3.1`, `edge-` and a commit for an `edge` image, or `dev` for one you built yourself) and the helper's version, plus the protocol, the backend and the address the helper was reached at. When a newer release exists, an **Update available** line links to its release notes, and the **Host** button in the top bar shows a white dot until you've opened this page. The check is off until you turn it on with [`UPDATE_CHECK`](./configuration#settings).
 - **The PiVPN scripts it runs:** each with its SHA-256 hash.
 - **Warnings from the server.**
 

@@ -3,7 +3,7 @@
 //
 // - Name: case-insensitive, numbers in names compare as numbers (Phone2 < Phone10).
 // - Address: numeric IPv4 compare, so 10.0.0.9 < 10.0.0.10.
-// - Last handshake, Download, Upload: clients without a value (never
+// - Last seen (the last handshake), Download, Upload: clients without a value (never
 //   handshaked, or not live so no counters) stay at the bottom in either
 //   direction. Name and Address have no such rule.
 // - Ties fall back to address, then name, so rows don't swap places between
@@ -12,7 +12,7 @@
 export const SORT_KEYS = {
   name: { label: 'Name', firstDir: 'asc' },
   address: { label: 'Address', firstDir: 'asc' },
-  handshake: { label: 'Last handshake', firstDir: 'desc' },
+  handshake: { label: 'Last seen', firstDir: 'desc' },
   download: { label: 'Download', firstDir: 'desc' },
   upload: { label: 'Upload', firstDir: 'desc' },
 };

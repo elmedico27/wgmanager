@@ -26,7 +26,7 @@
 
 {#each app.failures as f (f.id)}
   <section
-    class="overflow-hidden rounded-xl border border-off/50 bg-surface shadow-card"
+    class="overflow-hidden rounded-xl border border-off/50 bg-surface"
     transition:slide={{ duration: 200 }}
     role="alert"
   >
@@ -77,7 +77,7 @@
         {#if f.error.backup}
           <div class="rounded-lg bg-surface-2 px-3 py-2.5">
             <div class="mb-1 font-medium">Backup taken just before the change</div>
-            <div class="font-mono text-[12.5px] break-all text-ink-2">
+            <div class="font-mono text-[13px] break-all text-ink-2">
               {BACKUP_DIR}/{f.error.backup}.{iface}.conf<br />{BACKUP_DIR}/{f.error.backup}.clients.txt
             </div>
           </div>

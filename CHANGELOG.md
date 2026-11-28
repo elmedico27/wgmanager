@@ -11,6 +11,29 @@ the helper too.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-28
+
+Ships helper 0.1.5, the same as 0.3.3, so there is no need to rerun the install
+command.
+
+### Changed
+
+- **New look for the web interface.** Navigation, the WireGuard interface's
+  status and **Sign out** are now in a bar along the top, with a new logo and a
+  new colour scheme (a deep pine bar in light mode, graphite in dark mode, and
+  copper buttons and links).
+- **Clients page:** filter clients by state (Connected, Idle, Disabled, Needs a
+  look, Read-only), with the search box always visible. Each client's state is a
+  distinct mark, not only a colour. The list view now shows the same session bar,
+  and the card grid fits as many columns as the width allows.
+- **Last seen:** the session bar fills as a handshake ages instead of draining,
+  the text reads "Last seen", and the exact handshake time shows on hover.
+- **Accessibility:** higher-contrast text, a 13px minimum text size, larger tap
+  targets for small buttons, a modal client panel that keeps keyboard focus
+  inside it, and support for reduced motion and high-contrast mode.
+- Disabling a client no longer uses the red delete colour, and the confirmation
+  in the client panel scrolls into view.
+
 ## [0.3.3] - 2026-11-21
 
 ### Added
@@ -371,7 +394,8 @@ Verified from source, not run:
   one line per entry, and sshd matches each entry on its own with `*` and `?`
   wildcards only (OpenSSH 10.0p2).
 
-[Unreleased]: https://github.com/elmedico27/wgmanager/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/elmedico27/wgmanager/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/elmedico27/wgmanager/compare/v0.3.3...v0.4.0
 [0.3.3]: https://github.com/elmedico27/wgmanager/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/elmedico27/wgmanager/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/elmedico27/wgmanager/compare/v0.3.0...v0.3.1
