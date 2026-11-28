@@ -33,7 +33,7 @@
 </script>
 
 {#if show}
-  <section class="overflow-hidden rounded-xl border border-line bg-surface shadow-card" transition:slide={{ duration: 200 }} aria-label="Helper update">
+  <section class="overflow-hidden rounded-xl border border-edge bg-surface" transition:slide={{ duration: 200 }} aria-label="Helper update">
     <div class="flex gap-3 border-l-4 border-accent p-4">
       <Icon name="refresh" size={20} class="mt-0.5 shrink-0 text-accent" />
       <div class="flex min-w-0 flex-1 flex-col gap-3 text-sm">
@@ -49,9 +49,9 @@
           <div class="flex flex-col gap-1.5" transition:slide={{ duration: 160 }}>
             <div class="flex items-center justify-between text-sm">
               <span class="font-medium">Update command</span>
-              <button class="flex items-center gap-1 text-xs text-accent hover:underline" onclick={copy}><Icon name="copy" size={13} /> Copy</button>
+              <button class="link-btn" onclick={copy}><Icon name="copy" size={13} /> Copy</button>
             </div>
-            <pre class="overflow-x-auto rounded-lg bg-sunken p-3 font-mono text-[12.5px] leading-relaxed whitespace-pre text-ink">{command}</pre>
+            <pre class="overflow-x-auto rounded-lg bg-sunken p-3 font-mono text-[13px] leading-relaxed whitespace-pre text-ink">{command}</pre>
           </div>
         {/if}
 
@@ -62,7 +62,7 @@
           <button class="btn btn-ghost" onclick={recheck} disabled={checking}>
             <Icon name="refresh" size={16} class={checking ? 'animate-spin' : ''} /> Check again
           </button>
-          <button class="text-xs text-ink-3 hover:text-ink hover:underline" onclick={toSettings}>Also in Settings › App key</button>
+          <button class="inline-flex min-h-6 items-center text-xs text-ink-3 hover:text-ink hover:underline" onclick={toSettings}>Also in Settings › App key</button>
         </div>
       </div>
     </div>

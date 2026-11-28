@@ -3,24 +3,37 @@
   import { fly, fade } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import Icon from './Icon.svelte';
-  import StatusDot from './StatusDot.svelte';
+  import StatusMark from './StatusMark.svelte';
   import SessionMeter from './SessionMeter.svelte';
   import ConfigView from './ConfigView.svelte';
   import NoteEditor from './NoteEditor.svelte';
   import { app, mutate, notify, isFlagged, leavePanel } from '../lib/store.svelte.js';
   import { tick } from 'svelte';
-  import { bytes, status, ago, date, errorText, unmanageableReason, isSafeName } from '../lib/format.js';
+  import { bytes, status, clientState, STATE_LABEL, ago, handshakeTime, date, errorText, unmanageableReason, isSafeName } from '../lib/format.js';
 
   let client = $derived(app.list?.clients.find((c) => c.name === app.selected) ?? null);
   let name = $derived(app.selected);
   let up = $derived(app.list?.interface.up ?? true);
   // Unmanageable clients read the same as on their card.
   let st = $derived(!client ? null : client.manageable ? status(client, up) : { tone: 'warn', label: 'Managed outside wgmanager' });
+  let state = $derived(client ? clientState(client, up, app.now) : null);
+  // Connected and idle are said by the meter below; the header says them in words for the rest.
+  let stateText = $derived(!client ? null : state === 'connected' || state === 'idle' || state === 'off' ? STATE_LABEL[state] : st.label);
   // Only changes when the key does, so the editor below is not re-run by every keystroke.
   let draftKey = $derived(app.noteDraft?.key ?? null);
   let readOnly = $derived(client ? !client.manageable : false);
   let pending = $derived(name ? app.pending[name] : null);
   let confirming = $state(null); // 'disable' | 'remove'
+  let bodyEl = $state(null);
+
+  // Asking "are you sure?" can put the question below the fold: scroll the panel to
+  // the bottom so the whole question and its buttons are in view.
+  async function ask(what) {
+    confirming = what;
+    await tick();
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    bodyEl?.scrollTo({ top: bodyEl.scrollHeight, behavior: still ? 'auto' : 'smooth' });
+  }
   let lastError = $state(null);
 
   // reset per client
@@ -125,15 +138,15 @@
     aria-label="Client {name}"
   >
     <header class="flex items-start gap-3 border-b border-line px-5 pt-5 pb-4" inert={!!app.discard}>
-      {#if st}<div class="pt-2"><StatusDot tone={st.tone} label={st.label} /></div>{/if}
+      {#if state}<div class="pt-2"><StatusMark {state} label={stateText} quiet /></div>{/if}
       <div class="min-w-0 flex-1">
         <h2 class="truncate text-lg font-semibold">{name}</h2>
-        <div class="text-sm text-ink-2">{st?.label ?? 'No longer on the host'}</div>
+        <div class="text-sm text-ink-2">{stateText ?? 'No longer on the host'}</div>
       </div>
       <button bind:this={closeButton} class="grid size-9 place-items-center rounded-lg text-ink-2 hover:bg-sunken" onclick={close} aria-label="Close"><Icon name="x" /></button>
     </header>
 
-    <div class="flex flex-1 flex-col gap-6 overflow-y-auto px-5 py-5" inert={!!app.discard}>
+    <div bind:this={bodyEl} class="flex flex-1 flex-col gap-6 overflow-y-auto px-5 py-5" inert={!!app.discard}>
       {#if !app.list}
         <p class="text-sm text-ink-3">Loading…</p>
       {:else if !client}
@@ -154,7 +167,7 @@
         {/if}
 
         {#if client.live}
-          <section class="rounded-xl border border-line bg-surface p-4">
+          <section class="rounded-xl border border-edge bg-surface p-4">
             <SessionMeter {client} now={app.now} />
             <dl class="tabular mt-4 grid grid-cols-2 gap-3 text-sm">
               <div>
@@ -179,7 +192,7 @@
 
         <section class="flex flex-col gap-3">
           <h3 class="text-sm font-semibold">Details</h3>
-          <dl class="flex flex-col divide-y divide-line rounded-xl border border-line bg-surface text-sm">
+          <dl class="flex flex-col divide-y divide-line rounded-xl border border-edge bg-surface text-sm">
             <div class="flex justify-between gap-4 px-4 py-2.5">
               <dt class="text-ink-2">Address</dt>
               <dd class="font-mono text-[13px]">{client.address}</dd>
@@ -189,8 +202,8 @@
               <dd class="min-w-0 truncate font-mono text-[13px]">{client.endpoint ?? '—'}</dd>
             </div>
             <div class="flex justify-between gap-4 px-4 py-2.5">
-              <dt class="text-ink-2">Last handshake</dt>
-              <dd class="tabular">{client.latest_handshake ? ago(client.latest_handshake, app.now) : client.live ? 'None since the interface started' : '—'}</dd>
+              <dt class="text-ink-2">Last seen</dt>
+              <dd class="tabular" title={handshakeTime(client.latest_handshake)}>{client.latest_handshake ? ago(client.latest_handshake, app.now) : client.live ? 'Not seen since the interface started' : '—'}</dd>
             </div>
             <div class="flex justify-between gap-4 px-4 py-2.5">
               <dt class="text-ink-2">Created</dt>
@@ -199,9 +212,9 @@
             <div class="flex flex-col gap-1 px-4 py-2.5">
               <dt class="flex items-center justify-between text-ink-2">
                 Public key
-                <button class="text-xs text-accent hover:underline" onclick={copyKey}>Copy</button>
+                <button class="link-btn" onclick={copyKey}>Copy</button>
               </dt>
-              <dd class="font-mono text-[12.5px] break-all select-all">{client.public_key}</dd>
+              <dd class="font-mono text-[13px] break-all select-all">{client.public_key}</dd>
             </div>
           </dl>
         </section>
@@ -221,22 +234,22 @@
               <button class="btn btn-danger-ghost" disabled><Icon name="trash" size={16} /> Delete</button>
             </div>
           {:else if app.hostError && !pending}
-            <p class="rounded-xl border border-line bg-surface px-4 py-3 text-sm text-ink-2">
+            <p class="rounded-xl border border-edge bg-surface px-4 py-3 text-sm text-ink-2">
               Changes are paused until WG Manager can reach and trust the server again. See the message on the
               Clients page.
             </p>
           {:else if pending}
-            <div class="flex items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 text-sm">
+            <div class="flex items-center gap-3 rounded-xl border border-edge bg-surface px-4 py-3 text-sm">
               <span class="size-4 animate-spin rounded-full border-2 border-accent border-t-transparent"></span>
               <span>
                 {pending === 'remove' ? 'Deleting' : pending === 'enable' ? 'Enabling' : 'Disabling'} {name}. This can take up to a minute.
               </span>
             </div>
           {:else if confirming === 'disable'}
-            <div class="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 text-sm">
+            <div class="flex flex-col gap-3 rounded-xl border border-edge bg-surface p-4 text-sm">
               <p>Disable {name}? {client.endpoint && client.live ? 'Its current session ends right away. ' : ''}You can enable it again later; its keys and config are kept.</p>
               <div class="flex gap-2">
-                <button class="btn btn-danger" onclick={() => run('disable')}>Disable</button>
+                <button class="btn btn-primary" onclick={() => run('disable')}>Disable</button>
                 <button class="btn btn-ghost" onclick={() => (confirming = null)}>Cancel</button>
               </div>
             </div>
@@ -251,14 +264,14 @@
           {:else}
             <div class="flex flex-wrap gap-2">
               {#if isEnabled}
-                <button class="btn btn-ghost" onclick={() => (confirming = 'disable')}><Icon name="power" size={16} /> Disable</button>
+                <button class="btn btn-ghost" onclick={() => ask('disable')}><Icon name="power" size={16} /> Disable</button>
                 {#if canReEnable}
                   <button class="btn btn-ghost" onclick={() => run('enable')} title="Runs pivpn on again, which reloads WireGuard"><Icon name="refresh" size={16} /> Enable again</button>
                 {/if}
               {:else}
                 <button class="btn btn-ghost" disabled={!canEnable} onclick={() => run('enable')}><Icon name="power" size={16} /> Enable</button>
               {/if}
-              <button class="btn btn-danger-ghost" onclick={() => (confirming = 'remove')}><Icon name="trash" size={16} /> Delete</button>
+              <button class="btn btn-danger-ghost" onclick={() => ask('remove')}><Icon name="trash" size={16} /> Delete</button>
             </div>
             {#if !up && !isEnabled}
               <p class="text-xs text-ink-3">Enable is off while the interface is down.</p>

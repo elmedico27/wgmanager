@@ -2,7 +2,7 @@
   import Icon from '../components/Icon.svelte';
   import InstallKey from '../components/InstallKey.svelte';
   import PasswordFields from '../components/PasswordFields.svelte';
-  import { app, savePrefs, logout, notify, connect } from '../lib/store.svelte.js';
+  import { app, savePrefs, notify, connect } from '../lib/store.svelte.js';
   import { api, DEMO } from '../lib/api.js';
   import { passwordCode, PASSWORD_TOO_SHORT, PASSWORD_TOO_LONG, REPO_URL, DOCKER_HUB_URL } from '../lib/format.js';
 
@@ -57,7 +57,7 @@
 </script>
 
 {#if DEMO}
-  <p class="rounded-lg border border-line bg-surface-2 px-3 py-2.5 text-sm text-ink-2 md:hidden">
+  <p class="rounded-lg border border-edge bg-surface-2 px-3 py-2.5 text-sm text-ink-2">
     <span class="font-medium text-ink">Demo.</span> Not connected to a server. Your changes stay in this browser tab.
   </p>
 {/if}
@@ -90,7 +90,7 @@
   </div>
 </header>
 
-<section class="flex flex-col gap-4 rounded-xl border border-line bg-surface p-5 shadow-card">
+<section class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-xl border border-edge bg-surface px-5 py-3.5">
   <h2 class="font-semibold">Appearance</h2>
   <div class="flex flex-wrap gap-2" role="radiogroup" aria-label="Theme">
     {#each themes as t}
@@ -106,7 +106,7 @@
   </div>
 </section>
 
-<section class="flex flex-col gap-4 rounded-xl border border-line bg-surface p-5 shadow-card">
+<section class="flex flex-col gap-4 rounded-xl border border-edge bg-surface p-5">
   <h2 class="font-semibold">Admin password</h2>
   <form class="flex max-w-sm flex-col gap-4" onsubmit={changePassword}>
     <div class="flex flex-col gap-1.5">
@@ -119,7 +119,7 @@
   </form>
 </section>
 
-<section class="flex flex-col gap-4 rounded-xl border border-line bg-surface p-5 shadow-card">
+<section class="flex flex-col gap-4 rounded-xl border border-edge bg-surface p-5">
   <h2 class="font-semibold">SSH connection</h2>
   {#if ssh}
     <div class="overflow-x-auto">
@@ -137,7 +137,7 @@
   {/if}
 </section>
 
-<section class="flex flex-col gap-4 rounded-xl border border-line bg-surface p-5 shadow-card">
+<section class="flex flex-col gap-4 rounded-xl border border-edge bg-surface p-5">
   <h2 class="font-semibold">Server identity</h2>
   {#if hostKey?.pinned}
     <div class="flex flex-col gap-1 text-sm">
@@ -150,7 +150,7 @@
       </div>
     {/if}
     {#if forgetting}
-      <div class="flex flex-col gap-3 rounded-lg border border-line bg-surface-2 p-3 text-sm">
+      <div class="flex flex-col gap-3 rounded-lg border border-edge bg-surface-2 p-3 text-sm">
         <p>Forget this fingerprint? You'll be asked to confirm the server again. Only do this if you rebuilt the server or regenerated its SSH keys.</p>
         <div class="flex gap-2">
           <button class="btn btn-danger" onclick={forget}>Forget and confirm again</button>
@@ -163,12 +163,7 @@
   {/if}
 </section>
 
-<section class="flex flex-col gap-4 rounded-xl border border-line bg-surface p-5 shadow-card">
+<section class="flex flex-col gap-4 rounded-xl border border-edge bg-surface p-5">
   <h2 class="font-semibold">App key</h2>
   <InstallKey />
-</section>
-
-<section class="flex items-center justify-between gap-4 rounded-xl border border-line bg-surface p-5 shadow-card md:hidden">
-  <span class="text-sm">Signed in as admin</span>
-  <button class="btn btn-ghost" onclick={logout}><Icon name="logout" size={16} /> Sign out</button>
 </section>

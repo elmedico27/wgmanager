@@ -1,7 +1,7 @@
 <script>
   import { app, boot, leavePanel } from './lib/store.svelte.js';
   import { MOCK, DEMO } from './lib/api.js';
-  import Sidebar from './components/Sidebar.svelte';
+  import TopBar from './components/TopBar.svelte';
   import FailureBanner from './components/FailureBanner.svelte';
   import HelperUpdateBanner from './components/HelperUpdateBanner.svelte';
   import DetailPanel from './components/DetailPanel.svelte';
@@ -95,10 +95,11 @@
 {:else if app.phase === 'firstrun'}
   <FirstRun />
 {:else}
-  <div class="min-h-dvh md:pl-60">
-    <Sidebar />
-    <main class="gutter pb-28 pt-6 md:pb-12 md:pt-8">
-      <div class="mx-auto flex max-w-6xl flex-col gap-6">
+  <!-- While the client panel is open it is modal: the page behind it cannot be reached by keyboard. -->
+  <div class="min-h-dvh" inert={!!app.selected}>
+    <TopBar />
+    <main class="gutter pb-12 pt-6 md:pt-8">
+      <div class="mx-auto flex max-w-[1680px] flex-col gap-6">
         <FailureBanner />
         <HelperUpdateBanner />
         {#if app.view === 'clients'}
@@ -118,7 +119,7 @@
 {#if app.notice}
   <div
     role="status"
-    class="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-ink px-4 py-2.5 text-sm text-bg shadow-lift md:bottom-6"
+    class="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-ink px-4 py-2.5 text-sm text-bg shadow-lift"
   >
     {app.notice.text}
   </div>

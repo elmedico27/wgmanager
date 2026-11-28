@@ -56,7 +56,7 @@
 {/if}
 
 <div class="grid gap-4 lg:grid-cols-2">
-  <section class="flex flex-col gap-4 rounded-xl border border-line bg-surface p-5 shadow-card">
+  <section class="flex flex-col gap-4 rounded-xl border border-edge bg-surface p-5">
     <div class="flex items-center justify-between">
       <h2 class="font-semibold">WireGuard interface</h2>
       {#if iface}
@@ -70,8 +70,8 @@
         <div class="flex justify-between gap-4 py-2"><dt class="text-ink-2">Name</dt><dd class="font-mono">{iface.name}</dd></div>
         <div class="flex justify-between gap-4 py-2"><dt class="text-ink-2">Listen port</dt><dd class="font-mono">{iface.listen_port ?? '—'} {#if iface.listen_port}<span class="font-sans text-ink-3">UDP</span>{/if}</dd></div>
         <div class="flex flex-col gap-1 py-2">
-          <dt class="flex justify-between text-ink-2">Server public key {#if iface.public_key}<button class="text-xs text-accent hover:underline" onclick={() => copy(iface.public_key)}>Copy</button>{/if}</dt>
-          <dd class="font-mono text-[12.5px] break-all {iface.public_key ? 'select-all' : 'text-ink-2'}">{iface.public_key ?? 'Not available while the interface is down'}</dd>
+          <dt class="flex justify-between text-ink-2">Server public key {#if iface.public_key}<button class="link-btn" onclick={() => copy(iface.public_key)}>Copy</button>{/if}</dt>
+          <dd class="font-mono text-[13px] break-all {iface.public_key ? 'select-all' : 'text-ink-2'}">{iface.public_key ?? 'Not available while the interface is down'}</dd>
         </div>
         <div class="flex justify-between gap-4 py-2"><dt class="text-ink-2">Clients</dt><dd class="tabular">{app.list.clients.length}</dd></div>
       </dl>
@@ -80,7 +80,7 @@
     {/if}
   </section>
 
-  <section class="flex flex-col gap-4 rounded-xl border border-line bg-surface p-5 shadow-card">
+  <section class="flex flex-col gap-4 rounded-xl border border-edge bg-surface p-5">
     <div class="flex items-center justify-between">
       <h2 class="font-semibold">Software</h2>
       {#if v}
@@ -119,7 +119,7 @@
 </div>
 
 {#if v?.pivpn_scripts}
-  <section class="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-card">
+  <section class="flex flex-col gap-3 rounded-xl border border-edge bg-surface p-5">
     <h2 class="font-semibold">PiVPN scripts</h2>
     <div class="overflow-x-auto">
       <table class="w-full min-w-[520px] text-left text-sm">
@@ -127,7 +127,7 @@
           {#each Object.entries(v.pivpn_scripts) as [file, hash]}
             <tr class="border-t border-line first:border-0">
               <td class="py-2 pr-4 font-mono text-[13px] whitespace-nowrap">{file}</td>
-              <td class="py-2 font-mono text-[12px] break-all text-ink-3">{hash ?? 'unreadable'}</td>
+              <td class="py-2 font-mono text-[13px] break-all text-ink-3">{hash ?? 'unreadable'}</td>
             </tr>
           {/each}
         </tbody>
@@ -138,7 +138,7 @@
 
 {#if app.list?.warnings.length}
   <section class="flex flex-col gap-2 rounded-xl border border-warn-line bg-warn-soft p-5 text-sm">
-    <h2 class="font-semibold text-warn">Warnings from the host</h2>
+    <h2 class="font-semibold text-warn-text">Warnings from the host</h2>
     <ul class="flex flex-col gap-0.5 pl-5 text-ink-2">
       {#each app.list.warnings as w}<li class="list-disc break-words">{w}</li>{/each}
     </ul>

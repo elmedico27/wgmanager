@@ -18,18 +18,18 @@
     <div class="flex flex-col gap-1.5">
       <div class="flex items-center justify-between text-sm">
         <span class="font-medium">Install helper and app key</span>
-        <button class="flex items-center gap-1 text-xs text-accent hover:underline" onclick={() => copy(command, 'Command')}><Icon name="copy" size={13} /> Copy</button>
+        <button class="link-btn" onclick={() => copy(command, 'Command')}><Icon name="copy" size={13} /> Copy</button>
       </div>
-      <pre class="overflow-x-auto rounded-lg bg-sunken p-3 font-mono text-[12.5px] leading-relaxed whitespace-pre text-ink">{command}</pre>
+      <pre class="rounded-lg bg-sunken p-3 font-mono text-[13px] leading-relaxed [overflow-wrap:anywhere] whitespace-pre-wrap text-ink">{command}</pre>
       <p class="text-xs text-ink-3">If a different key is already installed, add <code class="font-mono">--replace-key</code>.</p>
     </div>
 
     <div class="flex flex-col gap-1.5">
       <div class="flex items-center justify-between text-sm">
         <span class="font-medium">This app's public key</span>
-        <button class="flex items-center gap-1 text-xs text-accent hover:underline" onclick={() => copy(s.publicKey, 'Public key')}><Icon name="copy" size={13} /> Copy</button>
+        <button class="link-btn" onclick={() => copy(s.publicKey, 'Public key')}><Icon name="copy" size={13} /> Copy</button>
       </div>
-      <div class="rounded-lg border border-line bg-surface-2 p-3 font-mono text-[12.5px] break-all text-ink-2 select-all">{s.publicKey}</div>
+      <div class="rounded-lg border border-edge bg-surface-2 p-3 font-mono text-[13px] break-all text-ink-2 select-all">{s.publicKey}</div>
     </div>
   </div>
 {/if}

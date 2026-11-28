@@ -51,16 +51,51 @@ export function status(c, ifaceUp) {
   return { tone: 'warn', label: 'Disabled but still on the interface' };
 }
 
+/**
+ * The session meter and the "Last seen" text. `elapsed` is how much of the 180 s
+ * session window has passed since the last handshake: 0 right after one, 1 when
+ * the session runs out (the bar fills as the session ages).
+ */
 export function connection(c, nowSec) {
   if (!c.live) return null;
-  if (!c.latest_handshake) return { connected: false, text: 'No handshake since the interface started' };
+  if (!c.latest_handshake) return { connected: false, text: 'Not seen since the interface started' };
   const age = nowSec - c.latest_handshake;
   return {
     connected: age < SESSION_WINDOW,
-    text: `Handshake ${ago(c.latest_handshake, nowSec)}`,
-    remaining: Math.min(1, Math.max(0, 1 - age / SESSION_WINDOW)), // clamp: clocks can disagree
+    text: `Last seen ${ago(c.latest_handshake, nowSec)}`,
+    elapsed: Math.min(1, Math.max(0, age / SESSION_WINDOW)), // clamp: clocks can disagree
   };
 }
+
+/** Exact time of the last handshake, for a hover tooltip. */
+export function handshakeTime(epoch) {
+  if (!epoch) return undefined;
+  return `Last handshake: ${new Date(epoch * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' })}`;
+}
+
+/**
+ * The one state a client shows as, for its mark and the state filter:
+ *   connected  enabled and a handshake under 180 s old
+ *   idle       enabled and on the interface, no recent handshake
+ *   off        disabled
+ *   attention  the server config and the interface disagree (amber dot)
+ *   readonly   managed outside wgmanager (lock)
+ */
+export function clientState(c, ifaceUp, nowSec) {
+  if (!c.manageable) return 'readonly';
+  const { tone } = status(c, ifaceUp);
+  if (tone === 'off') return 'off';
+  if (tone === 'warn') return 'attention';
+  return connection(c, nowSec)?.connected ? 'connected' : 'idle';
+}
+
+export const STATE_LABEL = {
+  connected: 'Connected',
+  idle: 'Idle',
+  off: 'Disabled',
+  attention: 'Needs a look',
+  readonly: 'Read-only',
+};
 
 // --- client name rule (helper spec 4.1) ------------------------------------------
 

@@ -1,5 +1,6 @@
 <script>
   import Icon from '../components/Icon.svelte';
+  import Logo from '../components/Logo.svelte';
   import InstallKey from '../components/InstallKey.svelte';
   import { app, connect, logout } from '../lib/store.svelte.js';
   import { api } from '../lib/api.js';
@@ -43,13 +44,14 @@
 
 <div class="gutter min-h-dvh bg-bg py-10 md:py-16">
   <div class="mx-auto flex max-w-2xl flex-col gap-8">
-    <header class="flex flex-col gap-2">
+    <header class="flex flex-col gap-3">
+      <Logo size={40} class="text-ink" />
       <h1 class="text-2xl font-semibold tracking-tight">Connect WG Manager to your server</h1>
       <p class="text-ink-2">Install the helper on your server, then test the connection.</p>
     </header>
 
     <ol class="flex flex-col gap-4">
-      <li class="flex gap-4 rounded-2xl border border-line bg-surface p-5 shadow-card">
+      <li class="flex gap-4 rounded-2xl border border-edge bg-surface p-5">
         <span class="grid size-7 shrink-0 place-items-center rounded-full bg-accent-soft text-sm font-semibold text-accent">1</span>
         <div class="flex min-w-0 flex-1 flex-col gap-4">
           <h2 class="font-semibold">Install the helper on the server</h2>
@@ -57,7 +59,7 @@
         </div>
       </li>
 
-      <li class="flex gap-4 rounded-2xl border border-line bg-surface p-5 shadow-card">
+      <li class="flex gap-4 rounded-2xl border border-edge bg-surface p-5">
         <span class="grid size-7 shrink-0 place-items-center rounded-full bg-accent-soft text-sm font-semibold text-accent">2</span>
         <div class="flex min-w-0 flex-1 flex-col gap-3">
           <h2 class="font-semibold">Test the connection</h2>

@@ -1,11 +1,15 @@
 @import "tailwindcss";
 
-/* Layout: fixed ink sidebar (bottom bar on phones), content column with client
-   cards, detail sheet sliding in from the right.
-   Color: cool slate neutrals leaning toward the cobalt accent; status colors are
-   semantic (green live, red disabled, amber anything else) and kept apart from
-   the accent. Type: IBM Plex Sans for the interface, Plex Mono for keys,
-   addresses and config text, which are data you compare character by character. */
+/* Layout: a deep-pine top bar carrying the navigation, interface health and
+   sign-out, over a content column of client cards (or one list) with a modal
+   detail sheet sliding in from the right.
+   Color: cool slate neutrals; copper for buttons, links and selection; the top bar is deep pine in light mode and graphite in dark. Status
+   colors are semantic and kept apart from the accent: green for connected or
+   idle (solid or ring), grey for disabled, amber for read-only or needs a look,
+   red only for delete and errors. Text colors (--live-text, --warn-text) are
+   darker than the matching dot colors so they pass 4.5:1 as small text.
+   Type: IBM Plex Sans for the interface, Plex Mono for keys, addresses and
+   config text, which are data you compare character by character. */
 :root {
   --bg: #eef0f5;
   --surface: #ffffff;
@@ -13,23 +17,25 @@
   --sunken: #e4e7ef;
   --ink: #141826;
   --ink-2: #4f5670;
-  --ink-3: #7c839a;
+  --ink-3: #5d647e;
   --line: #d8dce7;
-  --accent: #3446c9;
-  --accent-soft: #e3e6fb;
+  --edge: #cbd0de;
+  --accent: #9a4417;
+  --accent-soft: #f6e4d8;
   --on-accent: #ffffff;
-  --rail: #151a2b;
-  --rail-ink: #c9cee0;
-  --rail-ink-2: #7f87a3;
-  --rail-active: #262d47;
+  --rail: #10281e;
+  --rail-ink: #cfe2d8;
+  --rail-ink-2: #97b8a8;
+  --rail-active: #1f4333;
   --live: #17914e;
+  --live-text: #0e7a3f;
   --live-soft: #ddf3e6;
   --off: #cf3a3a;
   --off-soft: #fbe3e3;
   --warn: #b97800;
+  --warn-text: #8a5a00;
   --warn-soft: #fbefd2;
   --warn-line: #e6c06a;
-  --shadow: 0 1px 2px rgb(20 24 38 / 0.06), 0 2px 8px rgb(20 24 38 / 0.04);
   --shadow-lift: 0 2px 4px rgb(20 24 38 / 0.06), 0 12px 32px rgb(20 24 38 / 0.12);
   --scrim: rgb(14 17 28 / 0.38);
 }
@@ -42,23 +48,25 @@
     --sunken: #0c0f16;
     --ink: #e8eaf2;
     --ink-2: #a3a9be;
-    --ink-3: #737a92;
+    --ink-3: #8b92a9;
     --line: #2a3043;
-    --accent: #8796ff;
-    --accent-soft: #252c4f;
-    --on-accent: #0f1330;
-    --rail: #0b0e15;
-    --rail-ink: #c9cee0;
-    --rail-ink-2: #6e7690;
-    --rail-active: #1c2236;
+    --edge: #343b52;
+    --accent: #f0a46f;
+    --accent-soft: #3a2415;
+    --on-accent: #2a1205;
+    --rail: #16181c;
+    --rail-ink: #cfd2d8;
+    --rail-ink-2: #9097a3;
+    --rail-active: #2a2d33;
     --live: #3ccb7f;
+  --live-text: #3ccb7f;
     --live-soft: #15301f;
     --off: #ff6b6b;
     --off-soft: #3a1b1d;
     --warn: #f2b84b;
+  --warn-text: #f2b84b;
     --warn-soft: #33270f;
     --warn-line: #6b5220;
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
     --shadow-lift: 0 2px 6px rgb(0 0 0 / 0.35), 0 16px 40px rgb(0 0 0 / 0.45);
     --scrim: rgb(0 0 0 / 0.55);
     color-scheme: dark;
@@ -72,23 +80,25 @@
   --sunken: #0c0f16;
   --ink: #e8eaf2;
   --ink-2: #a3a9be;
-  --ink-3: #737a92;
+  --ink-3: #8b92a9;
   --line: #2a3043;
-  --accent: #8796ff;
-  --accent-soft: #252c4f;
-  --on-accent: #0f1330;
-  --rail: #0b0e15;
-  --rail-ink: #c9cee0;
-  --rail-ink-2: #6e7690;
-  --rail-active: #1c2236;
+  --edge: #343b52;
+  --accent: #f0a46f;
+  --accent-soft: #3a2415;
+  --on-accent: #2a1205;
+  --rail: #16181c;
+  --rail-ink: #cfd2d8;
+  --rail-ink-2: #9097a3;
+  --rail-active: #2a2d33;
   --live: #3ccb7f;
+  --live-text: #3ccb7f;
   --live-soft: #15301f;
   --off: #ff6b6b;
   --off-soft: #3a1b1d;
   --warn: #f2b84b;
+  --warn-text: #f2b84b;
   --warn-soft: #33270f;
   --warn-line: #6b5220;
-  --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
   --shadow-lift: 0 2px 6px rgb(0 0 0 / 0.35), 0 16px 40px rgb(0 0 0 / 0.45);
   --scrim: rgb(0 0 0 / 0.55);
   color-scheme: dark;
@@ -103,6 +113,7 @@
   --color-ink-2: var(--ink-2);
   --color-ink-3: var(--ink-3);
   --color-line: var(--line);
+  --color-edge: var(--edge);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
   --color-on-accent: var(--on-accent);
@@ -111,16 +122,20 @@
   --color-rail-ink-2: var(--rail-ink-2);
   --color-rail-active: var(--rail-active);
   --color-live: var(--live);
+  --color-live-text: var(--live-text);
   --color-live-soft: var(--live-soft);
   --color-off: var(--off);
   --color-off-soft: var(--off-soft);
   --color-warn: var(--warn);
+  --color-warn-text: var(--warn-text);
   --color-warn-soft: var(--warn-soft);
   --color-warn-line: var(--warn-line);
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
-  --shadow-card: var(--shadow);
   --shadow-lift: var(--shadow-lift);
+  /* 13px is the smallest text size in the interface. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.35;
 }
 
 html,
@@ -175,7 +190,7 @@ h3 {
   gap: 0.45rem;
   height: 2.25rem;
   padding: 0 0.9rem;
-  border-radius: 0.55rem;
+  border-radius: 0.375rem;
   font-weight: 500;
   font-size: 0.875rem;
   white-space: nowrap;
@@ -219,7 +234,7 @@ h3 {
   width: 100%;
   height: 2.5rem;
   padding: 0 0.75rem;
-  border-radius: 0.55rem;
+  border-radius: 0.375rem;
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--ink);
@@ -239,11 +254,44 @@ textarea.field {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+/* Reduced motion: transitions become instant. The connected-dot pulse and the
+   loading skeleton stop; spinners keep turning because they show progress. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    animation-duration: 1ms !important;
     transition-duration: 1ms !important;
   }
+  .animate-ping,
+  .animate-pulse {
+    animation: none !important;
+  }
+}
+
+/* Windows high-contrast mode keeps the status marks' own colors. */
+@media (forced-colors: active) {
+  .mark,
+  .mark * {
+    forced-color-adjust: none;
+  }
+}
+
+/* The focus ring on the dark top bar must be light to be seen. */
+.on-rail :focus-visible {
+  outline-color: #fff;
+}
+
+/* A text button for small actions such as Copy: at least 24px tall to tap. */
+.link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 1.5rem;
+  margin-inline: -0.375rem;
+  padding-inline: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--accent);
+}
+.link-btn:hover {
+  text-decoration: underline;
 }

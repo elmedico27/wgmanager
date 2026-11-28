@@ -1,6 +1,7 @@
 <script>
   // First run without an admin password. The setup code is printed to the
   // container log, so only someone who can read the log can claim the app.
+  import Logo from '../components/Logo.svelte';
   import PasswordFields from '../components/PasswordFields.svelte';
   import { setup } from '../lib/store.svelte.js';
   import { passwordCode, PASSWORD_TOO_SHORT, PASSWORD_TOO_LONG } from '../lib/format.js';
@@ -37,12 +38,7 @@
 <div class="gutter grid min-h-dvh place-items-center bg-rail py-10">
   <div class="flex w-full max-w-md flex-col gap-8">
     <div class="flex flex-col items-center gap-3 text-center">
-      <svg width="44" height="44" viewBox="0 0 32 32" aria-hidden="true">
-        <rect width="32" height="32" rx="8" fill="var(--accent)" />
-        <circle cx="10" cy="16" r="3.2" fill="none" stroke="var(--on-accent)" stroke-width="2" />
-        <circle cx="22" cy="16" r="3.2" fill="none" stroke="var(--on-accent)" stroke-width="2" />
-        <path d="M13.2 13.5h5.6M13.2 18.5h5.6" stroke="var(--on-accent)" stroke-width="2" stroke-linecap="round" />
-      </svg>
+      <Logo size={52} class="text-white" />
       <h1 class="text-xl font-semibold text-white">Set up WG Manager</h1>
     </div>
 

@@ -83,7 +83,7 @@
   </div>
 
   {#if mode}
-    <div class="rounded-xl border border-line bg-surface-2 p-3">
+    <div class="rounded-xl border border-edge bg-surface-2 p-3">
       {#if loading}
         <div class="grid h-40 place-items-center text-sm text-ink-3">Loading…</div>
       {:else if error}
@@ -98,7 +98,7 @@
         </div>
       {:else if mode === 'text' && text}
         <div class="relative">
-          <pre class="max-h-72 overflow-auto rounded-lg bg-sunken p-3 font-mono text-[12.5px] leading-relaxed whitespace-pre text-ink">{text}</pre>
+          <pre class="max-h-72 overflow-auto rounded-lg bg-sunken p-3 font-mono text-[13px] leading-relaxed whitespace-pre text-ink">{text}</pre>
           <button class="btn btn-ghost absolute top-2 right-2 h-7 px-2 text-xs" onclick={copy}><Icon name="copy" size={14} /> Copy</button>
         </div>
       {/if}

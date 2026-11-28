@@ -24,7 +24,7 @@
     {#if password !== confirm}
       <span class="text-xs text-off">The two passwords do not match.</span>
     {:else if lengthOk}
-      <span class="text-xs text-live">Passwords match.</span>
+      <span class="text-xs text-live-text">Passwords match.</span>
     {/if}
   {/if}
 </div>

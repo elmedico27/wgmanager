@@ -35,6 +35,7 @@ export const app = $state({
   failures: [], // unacknowledged failure warnings (from the server, plus local ones)
   notes: {}, // client notes: public key -> text (the app's own data, see api.js)
   search: '', // Clients page search text: memory only (not the address, not localStorage)
+  filter: 'all', // Clients page state filter: all | connected | idle | off | attention | readonly (memory only)
   notesUnreadable: false, // notes.json is damaged on the server; saving is refused
   notesFailed: false, // the last notes request failed: what is shown may be out of date
   noteDraft: null, // unsaved note text {key, text}; survives the client leaving the list
@@ -81,7 +82,7 @@ function resetSessionState() {
   Object.assign(app, {
     view: 'clients', list: null, version: null, settings: null, listError: null, hostError: null,
     hostKey: null, selected: null, adding: false, pending: {}, failures: [],
-    notes: {}, notesUnreadable: false, notesFailed: false, noteDraft: null, noteDirty: false, discard: null, search: '',
+    notes: {}, notesUnreadable: false, notesFailed: false, noteDraft: null, noteDirty: false, discard: null, search: '', filter: 'all',
   });
   // Signing in again returns to the page in the address bar.
   const r = currentRoute();
