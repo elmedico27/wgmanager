@@ -11,6 +11,11 @@ the helper too.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-28
+
+Ships helper 0.1.5, the same as 0.3.3, so there is no need to rerun the install
+command.
+
 ### Changed
 
 - **New look for the web interface.** Navigation, the WireGuard interface's
@@ -389,7 +394,8 @@ Verified from source, not run:
   one line per entry, and sshd matches each entry on its own with `*` and `?`
   wildcards only (OpenSSH 10.0p2).
 
-[Unreleased]: https://github.com/elmedico27/wgmanager/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/elmedico27/wgmanager/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/elmedico27/wgmanager/compare/v0.3.3...v0.4.0
 [0.3.3]: https://github.com/elmedico27/wgmanager/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/elmedico27/wgmanager/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/elmedico27/wgmanager/compare/v0.3.0...v0.3.1
